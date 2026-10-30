@@ -1,0 +1,58 @@
+# Dueños de cada ruta (contrato A4). GitHub pide revisión del dueño en cada PR que toque sus archivos.
+# André: @andreMD287 · Andrés: @Andres2649 · Hania: pendiente su usuario de GitHub
+# (cuando Hania sea colaboradora, reemplazar @andreMD287 por su usuario en el bloque "Hania").
+
+# Por defecto (base del proyecto, configuración): André
+*                                       @andreMD287
+
+# ---- André ----
+/db/00_extensiones.sql                  @andreMD287
+/db/01_roles_bd.sql                     @andreMD287
+/db/02_esquema.sql                      @andreMD287
+/db/05_contrato.sql                     @andreMD287
+/db/10_auth.sql                         @andreMD287
+/db/30_rondas_apuestas.sql              @andreMD287
+/db/50_permisos_auditoria.sql           @andreMD287
+/db/90_semilla_base.sql                 @andreMD287
+/db/93_semilla_juego.sql                @andreMD287
+/db/run_all.sh                          @andreMD287
+/db/tests/10_*.sql                      @andreMD287
+/db/tests/30_*.sql                      @andreMD287
+/src/lib/contrato.ts                    @andreMD287
+/src/lib/srp-cliente.ts                 @andreMD287
+/src/proxy.ts                           @andreMD287
+/src/server/db.ts                       @andreMD287
+/src/server/accion.ts                   @andreMD287
+/src/server/errores.ts                  @andreMD287
+/src/server/auth/                       @andreMD287
+/src/server/acciones/auth.ts            @andreMD287
+/src/server/acciones/rondas.ts          @andreMD287
+/src/server/acciones/apuestas.ts        @andreMD287
+/src/server/mocks/datos.ts              @andreMD287
+/src/server/mocks/auth.ts               @andreMD287
+/src/server/mocks/rondas.ts             @andreMD287
+/src/server/mocks/apuestas.ts           @andreMD287
+/scripts/                               @andreMD287
+/.github/CODEOWNERS                     @andreMD287
+/docs/CONTRATO.md                       @andreMD287 @Andres2649
+
+# ---- Andrés ----
+/db/20_personal_mesas.sql               @Andres2649
+/db/40_riesgo_historial.sql             @Andres2649
+/db/91_semilla_personal_mesas.sql       @Andres2649
+/db/92_semilla_jugadores.sql            @Andres2649
+/db/demo/                               @Andres2649
+/db/tests/20_*.sql                      @Andres2649
+/db/tests/40_*.sql                      @Andres2649
+/src/server/acciones/personal.ts        @Andres2649
+/src/server/acciones/mesas.ts           @Andres2649
+/src/server/acciones/riesgo.ts          @Andres2649
+/src/server/mocks/personal.ts           @Andres2649
+/src/server/mocks/mesas.ts              @Andres2649
+/src/server/mocks/riesgo.ts             @Andres2649
+/README.md                              @Andres2649
+
+# ---- Hania ----
+/src/app/                               @andreMD287
+/src/components/                        @andreMD287
+/public/                                @andreMD287

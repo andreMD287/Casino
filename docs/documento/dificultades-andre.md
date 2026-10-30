@@ -1,0 +1,18 @@
+# Dificultades encontradas — André
+
+| Dificultad | Qué pasó | Cómo se resolvió |
+|---|---|---|
+| Next.js 16 cambió convenciones | `middleware.ts` quedó deprecado y se llama `proxy.ts`; además el proyecto nuevo trae *Cache Components* activado, que exige envolver en `<Suspense>` todo componente que lea cookies. | Usamos `src/proxy.ts` y desactivamos Cache Components (todas las páginas dependen de la sesión). Consultamos la documentación incluida en `node_modules/next/dist/docs`, porque mucha documentación en línea es de versiones anteriores. |
+| SRP no se puede calcular en SQL | Los verificadores de los usuarios de prueba no se pueden generar con un `INSERT`. | `scripts/generar-usuarios-semilla.ts` usa la misma librería del navegador y escribe `db/90_semilla_base.sql`. |
+| Verificar que la librería usa SHA-256 | La documentación de `secure-remote-password` no lo dice de forma explícita. | Se leyó el código (`lib/params.js`, `client.js`, `browser/sha256.js`) y se dejó la evidencia en `autenticacion.md`. |
+| Falla en el paso 2 sin perder el registro del intento | Si la acción lanza un error, la transacción hace ROLLBACK y el intento fallido no cuenta para el bloqueo. | `FalloConCommit`: la acción devuelve el error `CA004` pero deja que la transacción haga COMMIT. |
+| Usuario inexistente distinguible | Responder distinto (o más rápido) revela qué usuarios existen. | Respuesta señuelo con salt `HMAC(SECRETO, usuario)` y el mismo costo de cálculo; medido ≈ 40 ms en ambos casos. |
+| Variables de psql dentro de `DO $$` | `:'app_password'` no se expande dentro de un bloque `$$`. | Se pasa por `set_config` (con `\gset` para no imprimir la clave) y se usa `format('%L')`. |
+| Límite de expresiones regulares de PostgreSQL | `'^[0-9a-f]{1,1024}$'` falla: el máximo de repeticiones es 255. | Se usa `+` y una verificación de `length()`. |
+| Funciones dentro de vistas | Las vistas aplican los permisos del *dueño* a las tablas, pero las funciones que llaman se verifican con los permisos de *quien consulta*. | `casino_app` recibe `EXECUTE` sobre `fn_actor` y `fn_motivo_no_apuesta`, que son solo de lectura. |
+| Vistas que dependen de archivos posteriores | `v_jugador_para_apuesta` debía reutilizar `v_estado_jugador` de Andrés, que se crea después (archivo 40). | La vista llama `fn_motivo_no_apuesta`, que usa `fn_puede_apostar`: hoy es el stub y, cuando Andrés la reemplace, la vista queda correcta sin cambiarla (es la misma regla que aplica el trigger). |
+| Pruebas que no dependan de las semillas de otros | Las semillas 91/92 son de Andrés y todavía no existían. | Cada archivo de pruebas crea sus propios datos (mesas `T-*`, usuarios `t_*`) dentro de una transacción con ROLLBACK; si ya hay un turno vigente, lo reutiliza. |
+| Interbloqueos posibles | Una apuesta bloquea al jugador y la ronda; un cierre bloquea la ronda y los jugadores. En distinto orden se pueden bloquear mutuamente. | Orden fijo: primero la ronda y luego los jugadores por id ascendente. |
+| `now()` repite la hora de inicio | Dentro de una transacción `now()` es constante, y `CHECK (cierre > inicio)` fallaría al abrir y cerrar en la misma transacción. | El cierre usa `clock_timestamp()`. |
+| PostgreSQL local sin clave conocida | El superusuario de la instalación local tenía una clave desconocida. | Se creó un clúster aparte con `initdb` en el puerto 5433 solo para el proyecto. |
+| Chrome no disponible para probar el login | No había navegador automatizable para probar la página de login. | Se invocaron las Server Actions por HTTP (como lo hace el navegador) y se verificó la cookie `HttpOnly; Secure; SameSite=strict`. |

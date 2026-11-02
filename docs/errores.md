@@ -51,6 +51,7 @@ la consola del servidor y llega al cliente como `CA000 "Error interno"`.
 | CA214 | Ya existe una opción con ese nombre en el juego | `fn_crear_opcion`, `fn_actualizar_opcion` |
 | CA215 | La ronda / apuesta / opción / juego no existe | varias |
 | CA216 | Las rondas de juegos sin registro detallado se cierran sin resultado | `fn_cerrar_ronda` (póker) |
+| CA217 | En la ruleta el resultado debe tener exactamente un número (Pleno) / El resultado no es coherente: "X" no corresponde al número N | `fn_resultado_ruleta` (cierre de ronda de ruleta) |
 
 ## CA1xx y CA3xx — Andrés
 

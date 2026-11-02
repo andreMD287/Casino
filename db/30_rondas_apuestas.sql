@@ -52,6 +52,58 @@ BEGIN
 END
 $$;
 
+-- Resultado de la ruleta (contexto del profesor: "el crupier ingresa el resultado ganador,
+-- ej. Número 17, Negro, Impar"). Exige exactamente un Pleno, rechaza opciones de color,
+-- paridad o docena que contradigan ese número (CA217) y completa las que falten.
+-- Con el 0 solo gana el Pleno 0. Otras opciones que cree el administrador se aceptan tal cual.
+CREATE OR REPLACE FUNCTION fn_resultado_ruleta(p_juego_id bigint, p_opciones bigint[]) RETURNS bigint[]
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = casino, pg_temp AS $$
+DECLARE
+  v_nombres text[];
+  v_plenos text[];
+  v_n int;
+  v_derivadas text[];
+  v_familias text[] := ARRAY['Rojo', 'Negro', 'Par', 'Impar', 'Primera docena', 'Segunda docena', 'Tercera docena'];
+  v_rojos int[] := ARRAY[1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+  v_nombre text;
+BEGIN
+  IF EXISTS (SELECT 1 FROM unnest(p_opciones) x(id)
+             WHERE NOT EXISTS (SELECT 1 FROM opciones_apuesta o WHERE o.id = x.id AND o.juego_id = p_juego_id)) THEN
+    RAISE EXCEPTION 'El resultado debe ser una opción del juego de la mesa' USING ERRCODE = 'CA202';
+  END IF;
+
+  SELECT array_agg(o.nombre) INTO v_nombres FROM opciones_apuesta o WHERE o.id = ANY (p_opciones);
+  SELECT array_agg(x) INTO v_plenos FROM unnest(v_nombres) x WHERE x ~ '^Pleno [0-9]{1,2}$';
+  IF coalesce(cardinality(v_plenos), 0) <> 1 THEN
+    RAISE EXCEPTION 'En la ruleta el resultado debe tener exactamente un número (Pleno)' USING ERRCODE = 'CA217';
+  END IF;
+  v_n := substring(v_plenos[1] FROM '[0-9]+')::int;
+  IF v_n > 36 THEN
+    RAISE EXCEPTION 'El número de la ruleta debe estar entre 0 y 36' USING ERRCODE = 'CA217';
+  END IF;
+
+  v_derivadas := ARRAY[v_plenos[1]];
+  IF v_n > 0 THEN
+    v_derivadas := v_derivadas
+      || CASE WHEN v_n = ANY (v_rojos) THEN 'Rojo' ELSE 'Negro' END
+      || CASE WHEN v_n % 2 = 0 THEN 'Par' ELSE 'Impar' END
+      || CASE WHEN v_n <= 12 THEN 'Primera docena' WHEN v_n <= 24 THEN 'Segunda docena' ELSE 'Tercera docena' END;
+  END IF;
+
+  FOREACH v_nombre IN ARRAY v_nombres LOOP
+    IF v_nombre = ANY (v_familias) AND NOT v_nombre = ANY (v_derivadas) THEN
+      RAISE EXCEPTION 'El resultado no es coherente: "%" no corresponde al número %', v_nombre, v_n USING ERRCODE = 'CA217';
+    END IF;
+  END LOOP;
+
+  -- Opciones indicadas + las derivadas del número (si existen en el juego).
+  RETURN ARRAY(
+    SELECT DISTINCT o.id FROM opciones_apuesta o
+    WHERE o.juego_id = p_juego_id AND (o.id = ANY (p_opciones) OR o.nombre = ANY (v_derivadas))
+    ORDER BY o.id);
+END
+$$;
+
 -- ===========================================================================
 -- Triggers
 -- ===========================================================================
@@ -232,6 +284,10 @@ BEGIN
   IF r.registro_detallado THEN
     IF cardinality(v_opciones) = 0 THEN
       RAISE EXCEPTION 'Debes indicar al menos una opción ganadora' USING ERRCODE = 'CA212';
+    END IF;
+    -- Ruleta: el resultado es un número; color, paridad y docena se derivan de él.
+    IF (SELECT j.nombre FROM juegos j WHERE j.id = r.juego_id) = 'Ruleta' THEN
+      v_opciones := fn_resultado_ruleta(r.juego_id, v_opciones);
     END IF;
     INSERT INTO resultados_ronda (ronda_id, opcion_id)
     SELECT DISTINCT p_ronda_id, o FROM unnest(v_opciones) AS o;

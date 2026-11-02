@@ -44,6 +44,9 @@ Restricciones (todas en la BD):
 - Una sola ronda abierta por mesa (`CA208`, índice único parcial).
 - El resultado es un conjunto de opciones del juego de la mesa (`CA202`); obligatorio en juegos con registro
   detallado (`CA212`) y prohibido en póker (`CA216`).
+- Ruleta: como dice el enunciado ("el crupier ingresa el resultado ganador, ej. Número 17, Negro, Impar"),
+  el resultado es un número. Se exige exactamente un Pleno, se rechazan color, paridad o docena que lo
+  contradigan (`CA217`) y el sistema completa los que falten. Con el 0 solo gana el Pleno 0.
 - El cierre es atómico: liquida todas las apuestas, deja `cierre = clock_timestamp()`, impide el doble
   cierre (`CA203`) y evalúa el riesgo de cada jugador afectado.
 - Anular una ronda abierta devuelve todas sus apuestas pendientes.
@@ -77,6 +80,6 @@ Restricciones (trigger + función, se cumplen aunque se haga `INSERT` directo):
 | Archivo | Qué cubre | Resultado |
 |---|---|---|
 | `db/tests/10_auth.sql` | autenticación, sesiones, roles, permisos de `casino_app` | 29 OK |
-| `db/tests/30_rondas_apuestas.sql` | 40 casos de rondas y apuestas (incluye saldo final exacto y póker) | 40 OK, 1 PENDIENTE (jugador suspendido: espera `fn_puede_apostar` real) |
+| `db/tests/30_rondas_apuestas.sql` | 46 casos de rondas y apuestas (saldo final exacto, póker, coherencia del resultado de la ruleta, jugador suspendido) | 46 OK con el módulo de Andrés |
 | `scripts/probar-auth.ts` | login SRP de punta a punta contra la base | 22 OK |
 | `docs/pruebas/concurrencia.md` | dos apuestas simultáneas que superan el saldo | B espera el bloqueo y falla con `CA010` |

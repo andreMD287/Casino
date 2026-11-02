@@ -69,7 +69,7 @@ BEGIN
   -- Empleados con competencia en los tres juegos
   FOREACH u IN ARRAY ARRAY['t_crup_a', 't_crup_b', 't_crup_c', 't_sup'] LOOP
     INSERT INTO empleados (usuario_id, documento, nombre, cargo, salario_mensual)
-    SELECT id, 'DOC-' || u, 'Prueba ' || u, CASE WHEN u = 't_sup' THEN 'supervisor' ELSE 'crupier' END, 3000000
+    SELECT id, '9200' || lpad(id::text, 6, '0'), 'Prueba ' || u, CASE WHEN u = 't_sup' THEN 'supervisor' ELSE 'crupier' END, 3000000
     FROM usuarios WHERE usuario = u
     RETURNING id INTO v_emp;
     INSERT INTO competencias (empleado_id, juego_id) SELECT v_emp, id FROM juegos;
@@ -110,11 +110,11 @@ BEGIN
 
   -- Jugadores con saldo inicial (siempre con fn_mover_saldo)
   INSERT INTO jugadores (usuario_id, documento, nombre, fecha_nacimiento)
-  SELECT id, 'DOC-t_jug1', 'Jugador Uno', DATE '1990-01-01' FROM usuarios WHERE usuario = 't_jug1' RETURNING id INTO v_emp;
+  SELECT id, '9300000001', 'Jugador Uno', DATE '1990-01-01' FROM usuarios WHERE usuario = 't_jug1' RETURNING id INTO v_emp;
   INSERT INTO fx VALUES ('jug1', v_emp);
   PERFORM fn_mover_saldo(v_emp, 'consignacion', 1000);
   INSERT INTO jugadores (usuario_id, documento, nombre, fecha_nacimiento)
-  SELECT id, 'DOC-t_jug2', 'Jugador Dos', DATE '1991-01-01' FROM usuarios WHERE usuario = 't_jug2' RETURNING id INTO v_emp;
+  SELECT id, '9300000002', 'Jugador Dos', DATE '1991-01-01' FROM usuarios WHERE usuario = 't_jug2' RETURNING id INTO v_emp;
   INSERT INTO fx VALUES ('jug2', v_emp);
   PERFORM fn_mover_saldo(v_emp, 'consignacion', 50);
 END $$;
@@ -321,11 +321,17 @@ BEGIN
   VALUES (pg_temp.fx('jug1'), 'pausa_voluntaria', now() - interval '1 minute', now() + interval '24 hours');
   BEGIN
     PERFORM fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Blackjack', 'Mano ganadora'), 20);
-    RAISE NOTICE '[PENDIENTE] jugador suspendido no puede apostar (fn_puede_apostar todavía es un stub)';
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'deshacer apuesta de prueba';
+    -- La apuesta pasó. Solo es aceptable mientras fn_puede_apostar siga siendo el stub vacío de 05_contrato.sql.
+    IF (SELECT regexp_replace(p.prosrc, '\s', '', 'g') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'casino' AND p.proname = 'fn_puede_apostar') = 'BEGINRETURN;END' THEN
+      RAISE NOTICE '[PENDIENTE] jugador suspendido no puede apostar (fn_puede_apostar todavía es el stub)';
+    ELSE
+      RAISE NOTICE '[FALLO] jugador suspendido pudo apostar: fn_puede_apostar no lanzó CA302';
+    END IF;
+    RAISE EXCEPTION USING ERRCODE = 'ZZ999', MESSAGE = 'deshacer apuesta de prueba';
   EXCEPTION
     WHEN SQLSTATE 'CA302' THEN RAISE NOTICE '[OK] jugador suspendido no puede apostar → CA302';
-    WHEN SQLSTATE 'P0001' THEN NULL;
+    WHEN SQLSTATE 'ZZ999' THEN NULL;
     WHEN OTHERS THEN RAISE NOTICE '[FALLO] jugador suspendido: se esperaba CA302, llegó %: %', SQLSTATE, SQLERRM;
   END;
 END $$;

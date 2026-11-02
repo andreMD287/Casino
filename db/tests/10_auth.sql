@@ -33,18 +33,18 @@ DO $$
 DECLARE
   r record;
 BEGIN
-  SELECT * INTO r FROM casino.fn_registrar_jugador('T-1001', 'Tester Auth', DATE '1995-05-05', 'T_Auth', 'abcd1234abcd1234', repeat('ab', 128));
+  SELECT * INTO r FROM casino.fn_registrar_jugador('9100001001', 'Tester Auth', DATE '1995-05-05', 'T_Auth', 'abcd1234abcd1234', repeat('ab', 128));
   PERFORM pg_temp.verifica('registro: crea el jugador con código J-xxxxxx', r.codigo ~ '^J-\d{6}$', coalesce(r.codigo, 'NULL'));
   PERFORM pg_temp.verifica('registro: el usuario se normaliza a minúsculas y queda con salt y verificador',
     EXISTS (SELECT 1 FROM casino.fn_srp_datos_login('t_auth') d WHERE d.salt = 'abcd1234abcd1234'));
 END $$;
 
 SELECT pg_temp.espera_error('registro: usuario repetido → CA003', 'CA003',
-  $q$SELECT * FROM casino.fn_registrar_jugador('T-1002', 'Otro', DATE '1990-01-01', 't_auth', 'aa', 'bb')$q$);
+  $q$SELECT * FROM casino.fn_registrar_jugador('9100001002', 'Otro', DATE '1990-01-01', 't_auth', 'aa', 'bb')$q$);
 SELECT pg_temp.espera_error('registro: documento repetido → CA013', 'CA013',
-  $q$SELECT * FROM casino.fn_registrar_jugador('T-1001', 'Otro', DATE '1990-01-01', 't_auth2', 'aa', 'bb')$q$);
+  $q$SELECT * FROM casino.fn_registrar_jugador('9100001001', 'Otro', DATE '1990-01-01', 't_auth2', 'aa', 'bb')$q$);
 SELECT pg_temp.espera_error('registro: usuario con formato inválido → CA011', 'CA011',
-  $q$SELECT * FROM casino.fn_registrar_jugador('T-1003', 'Otro', DATE '1990-01-01', 'a b', 'aa', 'bb')$q$);
+  $q$SELECT * FROM casino.fn_registrar_jugador('9100001003', 'Otro', DATE '1990-01-01', 'a b', 'aa', 'bb')$q$);
 
 SELECT pg_temp.verifica('datos de login: usuario inexistente no devuelve filas',
   NOT EXISTS (SELECT 1 FROM casino.fn_srp_datos_login('no_existe')));

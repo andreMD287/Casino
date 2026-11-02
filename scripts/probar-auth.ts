@@ -6,7 +6,7 @@
 // La app se conecta como casino_app. Para simular el paso del tiempo (desafío o sesión vencidos)
 // se usa una segunda conexión con el superusuario de PGUSER/PGPASSWORD.
 import { config } from 'dotenv';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
 import * as srp from 'secure-remote-password/client';
 import {
@@ -70,7 +70,7 @@ async function registrar(usuario: string, clave: string) {
   const salt = srp.generateSalt();
   const verificador = srp.deriveVerifier(srp.derivePrivateKey(salt, usuario, clave));
   return tx(null, (q) => q('SELECT * FROM casino.fn_registrar_jugador($1, $2, $3, $4, $5, $6)',
-    [`P-${randomBytes(4).toString('hex')}`, 'Prueba Auth', '1990-01-01', usuario, salt, verificador]));
+    [`94${randomInt(100_000_000).toString().padStart(8, '0')}`, 'Prueba Auth', '1990-01-01', usuario, salt, verificador]));
 }
 
 async function main() {

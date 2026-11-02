@@ -67,7 +67,7 @@ export const registrarJugador = crearAccion(
     seguro: true,
     args: z.tuple([
       z.object({
-        documento: z.string().trim().min(3).max(20),
+        documento: z.string().trim().regex(/^[0-9]{6,12}$/, 'documento numérico de 6 a 12 dígitos'),
         nombre: z.string().trim().min(3).max(100),
         fechaNacimiento: z.iso.date(),
       }),

@@ -61,8 +61,20 @@ DECLARE
     -- Rondas y apuestas (André)
     'fn_abrir_ronda', 'fn_cerrar_ronda', 'fn_anular_ronda',
     'fn_registrar_apuesta', 'fn_registrar_apuesta_resuelta', 'fn_anular_apuesta',
-    'fn_crear_opcion', 'fn_actualizar_opcion', 'fn_desactivar_opcion'
-    -- Personal, mesas, riesgo e historial (Andrés): se agregan aquí a pedido suyo.
+    'fn_crear_opcion', 'fn_actualizar_opcion', 'fn_desactivar_opcion',
+    -- Personal y competencias (Andrés)
+    'fn_crear_empleado', 'fn_actualizar_empleado', 'fn_desactivar_empleado',
+    'fn_asignar_competencia', 'fn_quitar_competencia',
+    -- Mesas, jornadas, turnos, asignaciones y conceptos (Andrés)
+    'fn_crear_mesa', 'fn_actualizar_mesa', 'fn_desactivar_mesa',
+    'fn_crear_jornada', 'fn_crear_turno', 'fn_eliminar_turno',
+    'fn_crear_asignacion', 'fn_eliminar_asignacion', 'fn_emitir_concepto',
+    -- Jugadores, riesgo e historial (Andrés)
+    'fn_actualizar_jugador', 'fn_desactivar_jugador', 'fn_solicitar_pausa',
+    'fn_cerrar_investigacion', 'fn_registrar_abono', 'fn_actualizar_umbral',
+    'fn_registrar_consignacion', 'fn_registrar_retiro'
+    -- Si Andrés usa otro nombre, o agrega una función pública que la app llama
+    -- (o que una vista v_* invoca), se suma aquí. Las internas NO van en esta lista.
   ];
 BEGIN
   FOREACH v_nombre IN ARRAY v_publicas LOOP

@@ -5,6 +5,10 @@ mismo jugador no pueden dejarlo con saldo negativo. `fn_registrar_apuesta` bloqu
 (`SELECT ... FOR UPDATE`) **antes** de leer el saldo: la segunda transacción espera a que la primera
 termine, lee el saldo ya descontado y falla con `CA010`.
 
+> **Montos:** las apuestas deben respetar el mínimo y el máximo de la mesa. Con las semillas de Andrés la ruleta es
+> `RUL-01` (mínimo 1000), así que en la ejecución real se usó saldo 10000 y dos apuestas de 6000.
+> Ver la salida completa en [`evidencia-concurrencia.md`](evidencia-concurrencia.md).
+
 ## Preparación (superusuario)
 
 Requiere la base con semillas y un turno vigente (`db/demo/turno_actual.sql` si el turno ya pasó).
@@ -86,5 +90,6 @@ Qué se ve:
 3. Además, `jugadores.saldo` tiene `CHECK (saldo >= 0)` y `movimientos_saldo.saldo_resultante` también:
    aunque una función tuviera un error, la BD rechazaría un saldo negativo.
 
-Esta prueba se ejecutó el 29 de octubre de 2026 con PostgreSQL 17 y dio el resultado esperado
-(B esperó y luego falló con CA010; saldo final 400.00).
+Esta prueba se ejecutó el 29 de octubre de 2026 (datos de prueba propios: saldo final 400.00) y el 2 de noviembre
+de 2026 con la base completa y las semillas reales (B esperó 4,5 s y falló con CA010; saldo final 4000.00).
+Salida completa en [`evidencia-concurrencia.md`](evidencia-concurrencia.md).

@@ -60,12 +60,32 @@ export async function abrirRonda(ctx: CtxMock, mesaId: number, _seguro: CamposSe
   return sinAsignacion(nueva);
 }
 
+/** Igual que fn_resultado_ruleta: exactamente un Pleno, sin contradicciones (CA217), y completa color, paridad y docena. */
+function resultadoRuleta(juegoId: number, ids: number[]): number[] {
+  const nombres = ids.map((id) => mockOpciones.find((o) => o.id === id && o.juegoId === juegoId)?.nombre);
+  if (nombres.some((n) => n === undefined)) throw new ErrorCasino('CA202', 'El resultado debe ser una opción del juego de la mesa');
+  const plenos = nombres.filter((n) => /^Pleno \d{1,2}$/.test(n!));
+  if (plenos.length !== 1) throw new ErrorCasino('CA217', 'En la ruleta el resultado debe tener exactamente un número (Pleno)');
+  const n = Number(plenos[0]!.slice(6));
+  const rojos = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+  const derivadas = [plenos[0]!];
+  if (n > 0) {
+    derivadas.push(rojos.includes(n) ? 'Rojo' : 'Negro', n % 2 === 0 ? 'Par' : 'Impar',
+      n <= 12 ? 'Primera docena' : n <= 24 ? 'Segunda docena' : 'Tercera docena');
+  }
+  const familias = ['Rojo', 'Negro', 'Par', 'Impar', 'Primera docena', 'Segunda docena', 'Tercera docena'];
+  const mala = nombres.find((x) => familias.includes(x!) && !derivadas.includes(x!));
+  if (mala) throw new ErrorCasino('CA217', `El resultado no es coherente: "${mala}" no corresponde al número ${n}`);
+  return mockOpciones.filter((o) => o.juegoId === juegoId && (ids.includes(o.id) || derivadas.includes(o.nombre))).map((o) => o.id);
+}
+
 export async function cerrarRonda(ctx: CtxMock, rondaId: number, opcionesGanadoras: number[], _seguro: CamposSeguros): Promise<ResumenLiquidacion> {
   const r = rondaDelCrupier(ctx, rondaId);
   if (r.estado !== 'abierta') throw new ErrorCasino('CA203', 'La ronda no está abierta');
   const mesa = mockMesas.find((m) => m.id === r.mesaId)!;
   if (mesa.registroDetallado && opcionesGanadoras.length === 0) throw new ErrorCasino('CA212', 'Debes indicar al menos una opción ganadora');
   if (!mesa.registroDetallado && opcionesGanadoras.length > 0) throw new ErrorCasino('CA216', 'Las rondas de juegos sin registro detallado se cierran sin resultado');
+  if (mesa.juego === 'Ruleta') opcionesGanadoras = resultadoRuleta(mesa.juegoId, opcionesGanadoras);
   const ahora = new Date().toISOString();
   for (const ap of mockApuestas.filter((x) => x.rondaId === rondaId && x.estado === 'pendiente')) {
     if (opcionesGanadoras.includes(ap.opcionId)) {

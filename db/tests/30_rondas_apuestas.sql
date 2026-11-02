@@ -128,9 +128,9 @@ DECLARE
 BEGIN
   PERFORM pg_temp.actor('t_crup_a');
   r1 := fn_abrir_ronda(pg_temp.fx('mesa_rul'));
-  PERFORM fn_cerrar_ronda(r1, ARRAY[pg_temp.opcion('Ruleta', 'Rojo')]);
+  PERFORM fn_cerrar_ronda(r1, ARRAY[pg_temp.opcion('Ruleta', 'Pleno 1')]);
   r2 := fn_abrir_ronda(pg_temp.fx('mesa_rul'));
-  PERFORM fn_cerrar_ronda(r2, ARRAY[pg_temp.opcion('Ruleta', 'Negro')]);
+  PERFORM fn_cerrar_ronda(r2, ARRAY[pg_temp.opcion('Ruleta', 'Pleno 2')]);
   r3 := fn_abrir_ronda(pg_temp.fx('mesa_rul'));
   INSERT INTO fx VALUES ('ronda_cerrada', r1), ('ronda_rul', r3);
   PERFORM pg_temp.verifica('correlativo 1, 2, 3 por mesa',
@@ -180,8 +180,9 @@ SELECT pg_temp.verifica('las apuestas rechazadas no movieron saldo', pg_temp.sal
 -- ---------------------------------------------------------------------------
 -- Liquidación con saldo final exacto
 --   jug1 (1000): Rojo 100 (×1), Pleno 17 50 (×35), Negro 20 (×1) → queda 830
---   resultado {Pleno 17, Rojo, Impar}: gana Rojo (+100 +100) y Pleno 17 (+50 +1750); pierde Negro
---   saldo final = 830 + 200 + 1800 = 2830
+--   el crupier indica {Pleno 17, Negro}; el sistema completa Impar y Segunda docena
+--   gana Pleno 17 (+50 +1750) y Negro (+20 +20); pierde Rojo
+--   saldo final = 830 + 1800 + 40 = 2670
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -199,19 +200,29 @@ BEGIN
   PERFORM pg_temp.espera_error('cierre sin resultado en juego con registro detallado → CA212', 'CA212',
     format('SELECT * FROM casino.fn_cerrar_ronda(%s, ARRAY[]::bigint[])', v_ronda));
 
-  SELECT * INTO s FROM fn_cerrar_ronda(v_ronda, ARRAY[pg_temp.opcion('Ruleta', 'Pleno 17'), pg_temp.opcion('Ruleta', 'Rojo'), pg_temp.opcion('Ruleta', 'Impar')]);
-  PERFORM pg_temp.verifica('liquidación: saldo final exacto 2830', pg_temp.saldo('jug1') = 2830, pg_temp.saldo('jug1')::text);
-  PERFORM pg_temp.verifica('liquidación: resumen (2 ganadas, 1 perdida, apostado 170, premios 1850, casino -1830)',
-    s.ganadas = 2 AND s.perdidas = 1 AND s.total_apostado = 170 AND s.total_premios = 1850 AND s.resultado_casino = -1830, s::text);
+  PERFORM pg_temp.espera_error('ruleta: resultado incoherente (17 no es rojo) → CA217', 'CA217',
+    format('SELECT * FROM casino.fn_cerrar_ronda(%s, ARRAY[%s, %s]::bigint[])', v_ronda, pg_temp.opcion('Ruleta', 'Pleno 17'), pg_temp.opcion('Ruleta', 'Rojo')));
+  PERFORM pg_temp.espera_error('ruleta: dos números en el resultado → CA217', 'CA217',
+    format('SELECT * FROM casino.fn_cerrar_ronda(%s, ARRAY[%s, %s]::bigint[])', v_ronda, pg_temp.opcion('Ruleta', 'Pleno 17'), pg_temp.opcion('Ruleta', 'Pleno 4')));
+  PERFORM pg_temp.espera_error('ruleta: resultado sin número (solo color) → CA217', 'CA217',
+    format('SELECT * FROM casino.fn_cerrar_ronda(%s, ARRAY[%s]::bigint[])', v_ronda, pg_temp.opcion('Ruleta', 'Negro')));
+
+  SELECT * INTO s FROM fn_cerrar_ronda(v_ronda, ARRAY[pg_temp.opcion('Ruleta', 'Pleno 17'), pg_temp.opcion('Ruleta', 'Negro')]);
+  PERFORM pg_temp.verifica('ruleta: el sistema completa paridad y docena del número (17 → Negro, Impar, Segunda docena)',
+    (SELECT array_agg(o.nombre ORDER BY o.nombre) FROM resultados_ronda rr JOIN opciones_apuesta o ON o.id = rr.opcion_id WHERE rr.ronda_id = v_ronda)
+      = ARRAY['Impar', 'Negro', 'Pleno 17', 'Segunda docena']);
+  PERFORM pg_temp.verifica('liquidación: saldo final exacto 2670', pg_temp.saldo('jug1') = 2670, pg_temp.saldo('jug1')::text);
+  PERFORM pg_temp.verifica('liquidación: resumen (2 ganadas, 1 perdida, apostado 170, premios 1770, casino -1670)',
+    s.ganadas = 2 AND s.perdidas = 1 AND s.total_apostado = 170 AND s.total_premios = 1770 AND s.resultado_casino = -1670, s::text);
   PERFORM pg_temp.verifica('liquidación: premio = monto × factor y estados correctos',
     (SELECT array_agg(estado || ':' || coalesce(premio::text, '-') ORDER BY id) FROM apuestas WHERE ronda_id = v_ronda)
-      = ARRAY['ganada:100.00', 'ganada:1750.00', 'perdida:-']);
+      = ARRAY['perdida:-', 'ganada:1750.00', 'ganada:20.00']);
   PERFORM pg_temp.verifica('liquidación: movimientos devolucion y premio solo para las ganadas',
     (SELECT count(*) FROM movimientos_saldo m JOIN apuestas a ON a.id = m.apuesta_id WHERE a.ronda_id = v_ronda AND m.tipo IN ('devolucion', 'premio')) = 4);
   PERFORM pg_temp.verifica('la ronda queda cerrada con cierre posterior al inicio',
     (SELECT estado = 'cerrada' AND cierre > inicio FROM rondas WHERE id = v_ronda));
   PERFORM pg_temp.verifica('reporte mesa-turno: resultado nominal = perdidas − premios',
-    (SELECT resultado_nominal FROM v_reporte_mesa_turno WHERE mesa_codigo = 'T-RUL') = -1830,
+    (SELECT resultado_nominal FROM v_reporte_mesa_turno WHERE mesa_codigo = 'T-RUL') = -1670,
     (SELECT resultado_nominal FROM v_reporte_mesa_turno WHERE mesa_codigo = 'T-RUL')::text);
 END $$;
 
@@ -231,17 +242,35 @@ BEGIN
   v_ronda := fn_abrir_ronda(pg_temp.fx('mesa_rul'));
   v_ap := fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Ruleta', 'Par'), 100);
   PERFORM fn_anular_apuesta(v_ap);
-  PERFORM pg_temp.verifica('anular apuesta devuelve el monto', pg_temp.saldo('jug1') = 2830, pg_temp.saldo('jug1')::text);
+  PERFORM pg_temp.verifica('anular apuesta devuelve el monto', pg_temp.saldo('jug1') = 2670, pg_temp.saldo('jug1')::text);
   PERFORM pg_temp.verifica('la apuesta queda anulada', (SELECT estado FROM apuestas WHERE id = v_ap) = 'anulada');
   PERFORM pg_temp.espera_error('no se anula dos veces la misma apuesta → CA211', 'CA211', format('SELECT casino.fn_anular_apuesta(%s)', v_ap));
 
   PERFORM fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Ruleta', 'Impar'), 30);
   PERFORM fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Ruleta', 'Pleno 0'), 10);
   PERFORM fn_anular_ronda(v_ronda);
-  PERFORM pg_temp.verifica('anular ronda devuelve todas las apuestas pendientes', pg_temp.saldo('jug1') = 2830, pg_temp.saldo('jug1')::text);
+  PERFORM pg_temp.verifica('anular ronda devuelve todas las apuestas pendientes', pg_temp.saldo('jug1') = 2670, pg_temp.saldo('jug1')::text);
   PERFORM pg_temp.verifica('la ronda queda anulada y sus apuestas también',
     (SELECT estado FROM rondas WHERE id = v_ronda) = 'anulada'
     AND NOT EXISTS (SELECT 1 FROM apuestas WHERE ronda_id = v_ronda AND estado <> 'anulada'));
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Ruleta con el 0: solo gana el Pleno 0 (color, paridad y docena pierden)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_ronda bigint;
+  v_antes numeric := pg_temp.saldo('jug1');
+BEGIN
+  PERFORM pg_temp.actor('t_crup_a');
+  v_ronda := fn_abrir_ronda(pg_temp.fx('mesa_rul'));
+  PERFORM fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Ruleta', 'Rojo'), 10);
+  PERFORM fn_registrar_apuesta(v_ronda, pg_temp.fx('jug1'), pg_temp.opcion('Ruleta', 'Pleno 0'), 10);
+  PERFORM fn_cerrar_ronda(v_ronda, ARRAY[pg_temp.opcion('Ruleta', 'Pleno 0')]);
+  PERFORM pg_temp.verifica('ruleta con 0: solo gana el Pleno 0 (saldo = antes − 20 + 10 + 350)',
+    pg_temp.saldo('jug1') = v_antes + 340 AND
+    (SELECT count(*) FROM resultados_ronda WHERE ronda_id = v_ronda) = 1, pg_temp.saldo('jug1')::text);
 END $$;
 
 -- ---------------------------------------------------------------------------

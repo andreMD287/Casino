@@ -83,3 +83,4 @@ Restricciones (trigger + función, se cumplen aunque se haga `INSERT` directo):
 | `db/tests/30_rondas_apuestas.sql` | 46 casos de rondas y apuestas (saldo final exacto, póker, coherencia del resultado de la ruleta, jugador suspendido) | 46 OK con el módulo de Andrés |
 | `scripts/probar-auth.ts` | login SRP de punta a punta contra la base | 22 OK |
 | `docs/pruebas/concurrencia.md` | dos apuestas simultáneas que superan el saldo | B espera el bloqueo y falla con `CA010` |
+| `scripts/probar-roles.mjs` y `scripts/probar-admin.mjs` | los 4 roles y las operaciones administrativas de punta a punta con la app real (`MODO_MOCK=0`) | 76 OK y 48 OK, sin fallos ([evidencia](../pruebas/evidencia-integracion-real.md)) |

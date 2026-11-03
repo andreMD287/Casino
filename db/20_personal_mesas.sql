@@ -87,7 +87,7 @@ BEGIN
     RAISE EXCEPTION 'El turno no existe' USING ERRCODE = 'CA112';
   END IF;
   NEW.jornada_id := v_jornada;
-  SELECT juego_id, activa INTO v_juego, v_mesa_activa FROM mesas WHERE id = NEW.mesa_id;
+  SELECT juego_id, activa INTO v_juego, v_mesa_activa FROM mesas WHERE id = NEW.mesa_id FOR SHARE;
   IF NOT FOUND OR NOT v_mesa_activa THEN
     RAISE EXCEPTION 'La mesa no existe o está inactiva' USING ERRCODE = 'CA112';
   END IF;
@@ -247,8 +247,11 @@ BEGIN
   END IF;
   SELECT juego_id INTO v_juego_anterior FROM mesas WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Mesa no encontrada' USING ERRCODE = 'CA104'; END IF;
-  IF v_juego_anterior <> p_juego_id AND EXISTS (SELECT 1 FROM rondas WHERE mesa_id = p_id) THEN
-    RAISE EXCEPTION 'No se puede cambiar el juego de una mesa con rondas' USING ERRCODE = 'CA124';
+  IF v_juego_anterior IS DISTINCT FROM p_juego_id AND (
+    EXISTS (SELECT 1 FROM rondas WHERE mesa_id = p_id)
+    OR EXISTS (SELECT 1 FROM asignaciones WHERE mesa_id = p_id)
+  ) THEN
+    RAISE EXCEPTION 'No se puede cambiar el juego de una mesa con rondas o asignaciones' USING ERRCODE = 'CA124';
   END IF;
   UPDATE mesas SET codigo = btrim(p_codigo), juego_id = p_juego_id,
     monto_minimo = p_minimo, monto_maximo = p_maximo WHERE id = p_id;
@@ -261,13 +264,47 @@ CREATE OR REPLACE FUNCTION fn_desactivar_mesa(p_id bigint) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = casino, pg_temp AS $$
 BEGIN
   PERFORM fn_exigir_rol('administrador');
+  -- Serializa la desactivacion con nuevas asignaciones (tr_validar_asignacion usa FOR SHARE).
+  PERFORM 1 FROM mesas WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Mesa no encontrada' USING ERRCODE = 'CA104'; END IF;
   IF EXISTS (SELECT 1 FROM rondas WHERE mesa_id = p_id AND estado = 'abierta') THEN
     RAISE EXCEPTION 'No se puede desactivar una mesa con ronda abierta' USING ERRCODE = 'CA125';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM asignaciones a JOIN turnos t ON t.id = a.turno_id
+    WHERE a.mesa_id = p_id AND t.fin > now()
+  ) THEN
+    RAISE EXCEPTION 'No se puede desactivar una mesa con asignaciones vigentes o futuras' USING ERRCODE = 'CA125';
+  END IF;
   UPDATE mesas SET activa = false WHERE id = p_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Mesa no encontrada' USING ERRCODE = 'CA104'; END IF;
 END
 $$;
+
+-- Respaldo de integridad para UPDATE directo, aun sin usar la funcion publica.
+CREATE OR REPLACE FUNCTION tg_proteger_juego_mesa() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = casino, pg_temp AS $$
+BEGIN
+  IF OLD.juego_id IS DISTINCT FROM NEW.juego_id AND (
+    EXISTS (SELECT 1 FROM asignaciones WHERE mesa_id = OLD.id)
+    OR EXISTS (SELECT 1 FROM rondas WHERE mesa_id = OLD.id)
+  ) THEN
+    RAISE EXCEPTION 'No se puede cambiar el juego de una mesa con rondas o asignaciones' USING ERRCODE = 'CA124';
+  END IF;
+  -- Protege incluso UPDATE directo sobre mesas.activa, sin usar fn_desactivar_mesa.
+  IF OLD.activa AND NOT NEW.activa THEN
+    IF EXISTS (SELECT 1 FROM rondas WHERE mesa_id = OLD.id AND estado = 'abierta')
+       OR EXISTS (
+         SELECT 1 FROM asignaciones a JOIN turnos t ON t.id = a.turno_id
+         WHERE a.mesa_id = OLD.id AND t.fin > now()
+       ) THEN
+      RAISE EXCEPTION 'No se puede desactivar una mesa con ronda abierta o asignaciones vigentes o futuras' USING ERRCODE = 'CA125';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$$;
+CREATE TRIGGER tr_proteger_juego_mesa BEFORE UPDATE OF juego_id, activa ON mesas
+FOR EACH ROW EXECUTE FUNCTION tg_proteger_juego_mesa();
 
 -- Jornadas y turnos.
 CREATE OR REPLACE FUNCTION fn_crear_jornada(p_fecha date) RETURNS bigint

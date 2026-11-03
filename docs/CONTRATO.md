@@ -50,6 +50,8 @@
 
 ## A2. Decisiones de interpretación (ya tomadas; no se cambian sin acuerdo de los tres)
 
+> Actualizado el 2 de noviembre de 2026, por acuerdo de los tres, para alinearlo con la especificación de requerimientos: puntos 5, 7, 8, 18 y 19.
+
 1. **Usuarios:** cada usuario tiene un solo rol. Un empleado que juega tiene una cuenta de jugador aparte, vinculada con `jugadores.empleado_id`.
 2. **Registro de apuestas:** las apuestas las registra el crupier asignado a la mesa en el turno vigente, en nombre del jugador.
 3. **Movimientos de saldo en una apuesta:**
@@ -57,10 +59,10 @@
    - Si gana, premio = monto × factor, y se acreditan dos movimientos: `devolucion` (el monto) y `premio` (el premio).
    - Si pierde, no hay movimiento: el monto ya quedó en el casino.
 4. **Anulación:** una apuesta solo se anula con la ronda abierta y estado pendiente, y genera una `devolucion`. Anular una ronda abierta devuelve todas sus apuestas pendientes.
-5. **Resultado de una ronda:** es un conjunto de opciones ganadoras del juego (por ejemplo "Pleno 17", "Negro", "Impar"). Una apuesta gana si su opción está en ese conjunto.
+5. **Resultado de una ronda:** es un conjunto de opciones ganadoras del juego (por ejemplo "Pleno 17", "Negro", "Impar"). Una apuesta gana si su opción está en ese conjunto. En la **ruleta** el resultado es un número: debe haber exactamente un Pleno; color, paridad o docena que lo contradigan se rechazan (`CA217`) y el sistema completa los que falten. Con el 0 solo gana el Pleno 0.
 6. **Póker (`registro_detallado = false`):** solo se usa `registrarApuestaResuelta`, que guarda la apuesta ya ganada o perdida. Valida mínimo, máximo, saldo y autorización. El cierre de esas rondas no lleva resultado.
-7. **Pérdida neta del día:** suma de montos de apuestas perdidas menos suma de premios de apuestas ganadas, liquidadas hoy. "Hoy" es la fecha en America/Bogota. Si supera `configuracion.umbral_perdida_diaria`, se crea una suspensión `perdida_diaria` de 24 horas desde ese momento. Esta regla aplica a todos los jugadores, incluidas las cuentas de empleados.
-8. **Pausa voluntaria:** suspensión `pausa_voluntaria` de 24 horas, solicitada por el propio jugador.
+7. **Pérdida del día:** suma de los montos de las apuestas perdidas liquidadas hoy, sin descontar premios (así lo define la especificación de requerimientos). "Hoy" es la fecha en America/Bogota. Si supera `configuracion.umbral_perdida_diaria`, se crea una suspensión `perdida_diaria` de 24 horas desde ese momento. Esta regla aplica a todos los jugadores, incluidas las cuentas de empleados.
+8. **Pausa voluntaria:** suspensión `pausa_voluntaria` de 24 horas, solicitada por el propio jugador desde su cuenta (`solicitarPausa`). No hay flujo para que el administrador la registre por él.
 9. **Deuda del empleado:** pérdida neta acumulada histórica de su cuenta de jugador menos sus abonos acumulados.
    - Si la deuda supera 2 × salario mensual, se abre una suspensión `deuda_empleado` sin fecha de fin.
    - Cuando la deuda vuelve a ser ≤ 2 × salario (por ejemplo, tras un abono), la suspensión se levanta sola (`levantada_en`).
@@ -74,6 +76,8 @@
 15. **Turnos de una jornada:** no se solapan, y la fecha local de su inicio coincide con la fecha de la jornada.
 16. **Eliminar:** en empleados, mesas, opciones de apuesta y jugadores significa desactivar. Turnos y asignaciones se eliminan solo si no tienen rondas.
 17. **Retiros:** un jugador en investigación no puede retirar. Un jugador suspendido sí puede.
+18. **Empleados en turno:** un empleado no puede apostar con su cuenta de jugador mientras tenga una asignación (como crupier o supervisor) en un turno vigente; los empleados juegan en sus tiempos libres (`CA311`).
+19. **Investigación propia:** un administrador no puede cerrar una investigación sobre su propia cuenta de jugador (`CA310`).
 
 ## A3. Stack y convenciones
 

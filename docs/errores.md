@@ -58,10 +58,11 @@ la consola del servidor y llega al cliente como `CA000 "Error interno"`.
 Los documenta Andrés. Los mocks de la fase 0 ya usan: CA101–CA116 (personal y mesas) y
 CA301 (inactivo), CA302 (suspendido), CA303 (en investigación), CA304, CA305, CA399 (no disponible).
 
-Códigos de las reglas acordadas el 2 de noviembre de 2026 (contrato A2.18, A2.19 y retiros):
+Códigos de las reglas acordadas el 2 de noviembre de 2026 (contrato A2.16, A2.18, A2.19 y retiros):
 
 | Código | Regla | Dónde |
 |---|---|---|
 | CA308 | Reservado: retiro de un jugador en investigación | retiros (A2.17) |
 | CA310 | Un administrador no puede cerrar una investigación sobre su propia cuenta | `fn_cerrar_investigacion` |
 | CA311 | Un empleado no puede apostar mientras tenga una asignación en un turno vigente | `fn_puede_apostar` |
+| CA126 | No se puede eliminar un turno o una asignación con rondas o conceptos emitidos; se conservan como historial (A2.16) | `fn_eliminar_turno`, `fn_eliminar_asignacion` |

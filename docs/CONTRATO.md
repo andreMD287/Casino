@@ -50,7 +50,7 @@
 
 ## A2. Decisiones de interpretación (ya tomadas; no se cambian sin acuerdo de los tres)
 
-> Actualizado el 2 de noviembre de 2026, por acuerdo de los tres, para alinearlo con la especificación de requerimientos: puntos 5, 7, 8, 18 y 19.
+> Actualizado el 2 de noviembre de 2026, por acuerdo de los tres, para alinearlo con la especificación de requerimientos: puntos 5, 7, 8, 16, 18 y 19.
 
 1. **Usuarios:** cada usuario tiene un solo rol. Un empleado que juega tiene una cuenta de jugador aparte, vinculada con `jugadores.empleado_id`.
 2. **Registro de apuestas:** las apuestas las registra el crupier asignado a la mesa en el turno vigente, en nombre del jugador.
@@ -74,7 +74,7 @@
     - El crupier debe tener cargo `crupier` y el supervisor cargo `supervisor`. Ambos deben estar activos y tener la competencia del juego de la mesa.
 14. **Concepto del supervisor:** uno por asignación, solo después de que termina el turno, y solo lo emite el supervisor de esa asignación.
 15. **Turnos de una jornada:** no se solapan, y la fecha local de su inicio coincide con la fecha de la jornada.
-16. **Eliminar:** en empleados, mesas, opciones de apuesta y jugadores significa desactivar. Turnos y asignaciones se eliminan solo si no tienen rondas.
+16. **Eliminar:** en empleados, mesas, opciones de apuesta y jugadores significa desactivar. Turnos y asignaciones se eliminan solo si no tienen rondas ni conceptos emitidos por el supervisor; si los tienen, se conservan como historial y la eliminación se rechaza con `CA126`. Eliminar un turno exige que ninguna de sus asignaciones tenga rondas ni conceptos.
 17. **Retiros:** un jugador en investigación no puede retirar. Un jugador suspendido sí puede.
 18. **Empleados en turno:** un empleado no puede apostar con su cuenta de jugador mientras tenga una asignación (como crupier o supervisor) en un turno vigente; los empleados juegan en sus tiempos libres (`CA311`).
 19. **Investigación propia:** un administrador no puede cerrar una investigación sobre su propia cuenta de jugador (`CA310`).

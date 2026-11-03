@@ -81,18 +81,20 @@ BEGIN
     WHERE apuesta_id = v_apuesta;
   END LOOP;
 
-  -- Empleada supervisor1: premio histórico 60.000 * 35 = 2.100.000;
-  -- salario = 2.300.000; todavía no entra en investigación.
+  -- Jugador3: premio histórico 60.000 * 35 = 2.100.000.
+  -- No es empleado: puede registrar historial sin eludir la prohibición de
+  -- apuestas de empleados durante su turno vigente. Supervisor1 conserva
+  -- su cuenta de juego para verificar el bloqueo cuando está de servicio.
   INSERT INTO apuestas(ronda_id, jugador_id, opcion_id, monto, factor_pago,
     estado, creada_en, registrada_por)
-  VALUES(v_ronda_hist, v_s1_juega, v_opcion, 60000, v_factor,
+  VALUES(v_ronda_hist, v_j3, v_opcion, 60000, v_factor,
     'pendiente', v_ini_hist + interval '7 minutes', v_crupier_hist)
   RETURNING id INTO v_apuesta;
-  PERFORM fn_mover_saldo(v_s1_juega, 'apuesta', 60000, v_apuesta);
+  PERFORM fn_mover_saldo(v_j3, 'apuesta', 60000, v_apuesta);
   UPDATE apuestas SET estado = 'ganada', premio = 2100000,
     liquidada_en = v_ini_hist + interval '12 minutes' WHERE id = v_apuesta;
-  PERFORM fn_mover_saldo(v_s1_juega, 'devolucion', 60000, v_apuesta);
-  PERFORM fn_mover_saldo(v_s1_juega, 'premio', 2100000, v_apuesta);
+  PERFORM fn_mover_saldo(v_j3, 'devolucion', 60000, v_apuesta);
+  PERFORM fn_mover_saldo(v_j3, 'premio', 2100000, v_apuesta);
   UPDATE movimientos_saldo SET creado_en = v_ini_hist + interval '7 minutes'
     WHERE apuesta_id = v_apuesta;
   UPDATE rondas SET estado = 'cerrada', cierre = v_ini_hist + interval '15 minutes'

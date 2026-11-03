@@ -1,7 +1,11 @@
 -- Modulo 40 (Andres): jugadores, autorizaciones, riesgo e historial.
--- Fuente de reglas: CONTRATO.md A2. Las discrepancias con la especificacion
--- original (perdida diaria bruta/neta y empleado con turno vigente) quedan
--- pendientes de acuerdo del grupo; este archivo respeta el contrato vigente.
+-- Ajustes acordados con Andre (2026-11-02), sujetos a confirmacion de Hania
+-- para actualizar el contrato comun:
+-- 1) Perdida diaria BRUTA: suma de apuestas perdidas liquidadas hoy.
+-- 2) Cuenta de empleado asignado a turno vigente: apuesta bloqueada (CA311).
+-- 3) Administrador no cierra investigacion sobre su propia cuenta (CA310).
+-- CA308 permanece reservado para la restriccion de retiros en investigacion
+-- del plan original; no se reutiliza para el bloqueo por turno.
 SET ROLE casino_owner;
 SET search_path = casino, public;
 
@@ -57,6 +61,20 @@ BEGIN
         USING ERRCODE = 'CA302';
     END IF;
   END IF;
+
+  -- El empleado-jugador no puede apostar mientras opera o supervisa una mesa.
+  -- Se valida desde la BD, tanto para acciones como INSERT directos de apuestas.
+  -- El inicio es inclusivo y el fin exclusivo: [inicio, fin).
+  IF EXISTS (
+    SELECT 1 FROM jugadores j
+    JOIN asignaciones a ON (j.empleado_id = a.crupier_id OR j.empleado_id = a.supervisor_id)
+    JOIN turnos t ON t.id = a.turno_id
+    WHERE j.id = p_jugador_id AND j.empleado_id IS NOT NULL
+      AND now() >= t.inicio AND now() < t.fin
+  ) THEN
+    RAISE EXCEPTION 'El empleado esta en turno y no puede apostar'
+      USING ERRCODE = 'CA311';
+  END IF;
 END $$;
 
 -- Se ejecuta tras liquidar apuestas, y despues de abonos de empleados.
@@ -81,15 +99,16 @@ BEGIN
   END IF;
 
   SELECT valor INTO v_umbral FROM configuracion WHERE clave = 'umbral_perdida_diaria';
-  -- Contrato A2.7: perdida diaria neta = perdidas - premios, por fecha de liquidacion.
-  SELECT coalesce(sum(CASE WHEN a.estado = 'perdida' THEN a.monto
-                           WHEN a.estado = 'ganada' THEN -coalesce(a.premio, 0)
-                           ELSE 0 END), 0)
+  -- Especificacion del grupo, punto 9: perdida diaria BRUTA.
+  -- Se suman solamente los montos de apuestas PERDIDAS liquidadas hoy
+  -- (fecha local de Bogota). Los premios no compensan esas perdidas.
+  -- Esta definicion NO cambia la deuda ni la ganancia neta de empleados.
+  SELECT coalesce(sum(a.monto), 0)
     INTO v_perdida_dia
   FROM apuestas a WHERE a.jugador_id = p_jugador_id
     AND (a.liquidada_en AT TIME ZONE 'America/Bogota')::date =
         (now() AT TIME ZONE 'America/Bogota')::date
-    AND a.estado IN ('ganada', 'perdida');
+    AND a.estado = 'perdida';
 
   IF v_umbral IS NOT NULL AND v_perdida_dia > v_umbral AND NOT EXISTS (
     SELECT 1 FROM suspensiones s WHERE s.jugador_id = p_jugador_id
@@ -179,6 +198,17 @@ BEGIN
   PERFORM fn_exigir_rol('administrador');
   IF p_resolucion IS NULL OR btrim(p_resolucion) = '' THEN
     RAISE EXCEPTION 'La resolucion es obligatoria' USING ERRCODE = 'CA309'; END IF;
+  -- El admin tambien puede tener una ficha de jugador como empleado.
+  -- No se le permite resolver su propia investigacion (conflicto de interes).
+  IF EXISTS (
+    SELECT 1 FROM investigaciones i
+    JOIN jugadores j ON j.id = i.jugador_id
+    JOIN empleados e ON e.id = j.empleado_id
+    WHERE i.id = p_id AND e.usuario_id = fn_actor()
+  ) THEN
+    RAISE EXCEPTION 'No puedes cerrar una investigacion sobre tu propia cuenta'
+      USING ERRCODE = 'CA310';
+  END IF;
   UPDATE investigaciones SET cerrada_en = clock_timestamp(), resolucion = btrim(p_resolucion),
        cerrada_por = fn_actor() WHERE id = p_id AND cerrada_en IS NULL;
   IF NOT FOUND THEN RAISE EXCEPTION 'La investigacion ya esta cerrada o no existe' USING ERRCODE = 'CA307'; END IF;

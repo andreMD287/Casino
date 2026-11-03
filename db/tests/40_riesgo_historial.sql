@@ -44,7 +44,7 @@ BEGIN
   VALUES(pg_temp.id40('ronda'),p_jugador,pg_temp.id40('opcion'),p_monto,1,
          CASE WHEN p_ganada THEN 'ganada' ELSE 'perdida' END,
          CASE WHEN p_ganada THEN p_monto ELSE NULL END,
-         now()-interval '5 minutes',now()-interval '4 minutes',pg_temp.id40('crup_usuario'))
+         now()-interval '1 minute',now(),pg_temp.id40('crup_usuario'))
   RETURNING id INTO v_id;
   PERFORM set_config('session_replication_role', 'origin', true);
   PERFORM casino.fn_mover_saldo(p_jugador, 'apuesta', p_monto, v_id);
@@ -75,8 +75,8 @@ BEGIN
   IF v_juego IS NULL THEN RAISE EXCEPTION 'La semilla base no tiene Ruleta'; END IF;
   INSERT INTO fx40 VALUES ('opcion',(SELECT id FROM opciones_apuesta WHERE juego_id=v_juego AND nombre='Rojo'));
 
-  FOREACH v_usuario IN ARRAY ARRAY['t40_admin','t40_crup','t40_sup','t40_staff','t40_j1','t40_j2','t40_staffj','t40_earnj','t40_bad'] LOOP
-    v_rol := CASE WHEN v_usuario='t40_admin' THEN 'administrador'
+  FOREACH v_usuario IN ARRAY ARRAY['t40_admin','t40_admin2','t40_crup','t40_sup','t40_staff','t40_j1','t40_j2','t40_j3','t40_staffj','t40_supj','t40_earnj','t40_bad'] LOOP
+    v_rol := CASE WHEN v_usuario IN ('t40_admin','t40_admin2') THEN 'administrador'
                   WHEN v_usuario='t40_sup' THEN 'supervisor'
                   WHEN v_usuario IN ('t40_crup','t40_staff') THEN 'crupier'
                   ELSE 'jugador' END;
@@ -111,6 +111,7 @@ BEGIN
       (v_fecha + time '12:20') AT TIME ZONE 'America/Bogota', 'cerrada')
     RETURNING id INTO v_id;
   INSERT INTO fx40 VALUES('ronda',v_id);
+  INSERT INTO fx40 VALUES('mesa',v_mesa);
 
   INSERT INTO jugadores(usuario_id,documento,nombre,fecha_nacimiento)
     VALUES(pg_temp.id40('usr_t40_j1'),'44000001','Jugador prueba 1',DATE '1990-01-01')
@@ -120,10 +121,18 @@ BEGIN
     VALUES(pg_temp.id40('usr_t40_j2'),'44000002','Jugador prueba 2',DATE '1990-01-01')
     RETURNING id INTO v_id;
   INSERT INTO fx40 VALUES('j2',v_id);
+  INSERT INTO jugadores(usuario_id,documento,nombre,fecha_nacimiento)
+    VALUES(pg_temp.id40('usr_t40_j3'),'44000006','Jugador prueba perdidas brutas',DATE '1990-01-01')
+    RETURNING id INTO v_id;
+  INSERT INTO fx40 VALUES('j3',v_id);
   INSERT INTO jugadores(usuario_id,documento,nombre,fecha_nacimiento,empleado_id)
     VALUES(pg_temp.id40('usr_t40_staffj'),'44000003','Empleado jugador deuda',DATE '1990-01-01',pg_temp.id40('emp_t40_staff'))
     RETURNING id INTO v_id;
   INSERT INTO fx40 VALUES('je',v_id);
+  INSERT INTO jugadores(usuario_id,documento,nombre,fecha_nacimiento,empleado_id)
+    VALUES(pg_temp.id40('usr_t40_supj'),'44000007','Supervisor jugador',DATE '1990-01-01',pg_temp.id40('emp_t40_sup'))
+    RETURNING id INTO v_id;
+  INSERT INTO fx40 VALUES('jsup',v_id);
   -- Segundo empleado para testear investigacion sin mezclar deuda.
   INSERT INTO empleados(usuario_id,documento,nombre,cargo,salario_mensual)
     VALUES(pg_temp.id40('usr_t40_admin'),'43000004','Administrador jugador','administrador',1000)
@@ -137,7 +146,9 @@ BEGIN
   PERFORM fn_actualizar_umbral(300);
   PERFORM fn_mover_saldo(pg_temp.id40('j1'),'consignacion',100000);
   PERFORM fn_mover_saldo(pg_temp.id40('j2'),'consignacion',100000);
+  PERFORM fn_mover_saldo(pg_temp.id40('j3'),'consignacion',100000);
   PERFORM fn_mover_saldo(pg_temp.id40('je'),'consignacion',100000);
+  PERFORM fn_mover_saldo(pg_temp.id40('jsup'),'consignacion',100000);
   PERFORM fn_mover_saldo(pg_temp.id40('jg'),'consignacion',100000);
 END $$;
 
@@ -150,11 +161,23 @@ SELECT pg_temp.error40('Documento no numerico bloqueado (CA309)','CA309',
 SELECT pg_temp.check40('Estado inicial Activo en vista derivada',
   (SELECT estado='Activo' FROM v_estado_jugador WHERE jugador_id=pg_temp.id40('j1')));
 
+-- Pérdidas brutas: exactamente 300 no suspende, 310 sí, aunque haya premios.
+SELECT pg_temp.actor40('t40_admin');
+SELECT pg_temp.apuesta40(pg_temp.id40('j3'),300,false);
+SELECT fn_evaluar_riesgo(pg_temp.id40('j3'));
+SELECT pg_temp.check40('Perdidas brutas iguales al umbral no suspenden (limite estricto)',
+  (SELECT count(*)=0 FROM v_suspensiones WHERE jugador_id=pg_temp.id40('j3') AND motivo='perdida_diaria' AND activa));
+SELECT pg_temp.apuesta40(pg_temp.id40('j3'),10,false);
+SELECT pg_temp.apuesta40(pg_temp.id40('j3'),250,true);
+SELECT fn_evaluar_riesgo(pg_temp.id40('j3'));
+SELECT pg_temp.check40('Perdidas brutas > umbral suspenden aunque existan premios (neto 60)',
+  (SELECT count(*)=1 FROM v_suspensiones WHERE jugador_id=pg_temp.id40('j3') AND motivo='perdida_diaria' AND activa));
+
 -- Perdida diaria superior al umbral: suspension 24 h, idempotencia, vencimiento.
 SELECT pg_temp.actor40('t40_admin');
 SELECT pg_temp.apuesta40(pg_temp.id40('j1'),310,false);
 SELECT fn_evaluar_riesgo(pg_temp.id40('j1'));
-SELECT pg_temp.check40('Perdida neta diaria activa suspension de 24 h',
+SELECT pg_temp.check40('Perdida bruta diaria activa suspension de 24 h',
   (SELECT count(*)=1 FROM v_suspensiones WHERE jugador_id=pg_temp.id40('j1') AND motivo='perdida_diaria' AND activa));
 SELECT fn_evaluar_riesgo(pg_temp.id40('j1'));
 SELECT pg_temp.check40('Evaluacion de riesgo idempotente',
@@ -176,6 +199,38 @@ SELECT pg_temp.error40('Segunda pausa voluntaria rechazada (CA305)','CA305',
   'SELECT casino.fn_solicitar_pausa()');
 SELECT pg_temp.error40('Jugador en pausa no puede apostar (CA302)','CA302',
   format('SELECT casino.fn_puede_apostar(%s)',pg_temp.id40('j2')));
+
+-- Empleado con cuenta jugadora durante un turno vigente: crupier y supervisor.
+-- Aprovechamos el turno vigente de la semilla 91, creado por run_all.sh.
+-- La asignacion de prueba se revierte al terminar, dentro del ROLLBACK general.
+SELECT pg_temp.actor40('t40_admin');
+SELECT fn_puede_apostar(pg_temp.id40('je'));
+SELECT fn_puede_apostar(pg_temp.id40('jsup'));
+DO $$
+DECLARE v_turno bigint; v_asig bigint;
+BEGIN
+  SELECT id INTO v_turno FROM turnos t
+  WHERE now() >= t.inicio AND now() < t.fin ORDER BY t.inicio LIMIT 1;
+  IF v_turno IS NULL THEN
+    RAISE NOTICE '[FALLO] No se encontro turno vigente para probar CA311';
+  ELSE
+    INSERT INTO asignaciones(turno_id, jornada_id, mesa_id, crupier_id, supervisor_id)
+    SELECT t.id, t.jornada_id, pg_temp.id40('mesa'),
+           pg_temp.id40('emp_t40_staff'), pg_temp.id40('emp_t40_sup')
+    FROM turnos t WHERE t.id = v_turno
+    RETURNING id INTO v_asig;
+    INSERT INTO fx40 VALUES ('asig_activa',v_asig);
+  END IF;
+END $$;
+SELECT pg_temp.error40('Crupier empleado en turno vigente no puede apostar (CA311)','CA311',
+  format('SELECT casino.fn_puede_apostar(%s)',pg_temp.id40('je')));
+SELECT pg_temp.error40('Supervisor empleado en turno vigente no puede apostar (CA311)','CA311',
+  format('SELECT casino.fn_puede_apostar(%s)',pg_temp.id40('jsup')));
+DELETE FROM asignaciones WHERE id = pg_temp.id40('asig_activa');
+SELECT fn_puede_apostar(pg_temp.id40('je'));
+SELECT fn_puede_apostar(pg_temp.id40('jsup'));
+SELECT pg_temp.check40('Finalizada la asignacion, ambos empleados quedan fuera de turno',
+  NOT EXISTS (SELECT 1 FROM asignaciones WHERE id = pg_temp.id40('asig_activa')));
 
 -- Empleado: deuda > 2 sueldos y levantamiento tras abono.
 SELECT pg_temp.actor40('t40_admin');
@@ -202,13 +257,26 @@ SELECT pg_temp.check40('Ganancia > salario abre investigacion',
   (SELECT count(*)=1 FROM v_investigaciones WHERE jugador_id=pg_temp.id40('jg') AND cerrada_en IS NULL));
 SELECT pg_temp.error40('Investigacion bloquea apuestas (CA303)','CA303',
   format('SELECT casino.fn_puede_apostar(%s)',pg_temp.id40('jg')));
-SELECT fn_cerrar_investigacion((SELECT id FROM investigaciones WHERE jugador_id=pg_temp.id40('jg') AND cerrada_en IS NULL), 'Caso revisado');
+-- El admin t40_admin es dueño de la ficha de juego investigada jg.
+SELECT pg_temp.error40('Admin no puede cerrar investigacion de su cuenta (CA310)','CA310',
+  format('SELECT casino.fn_cerrar_investigacion(%s,%L)',
+    (SELECT id FROM investigaciones WHERE jugador_id=pg_temp.id40('jg') AND cerrada_en IS NULL), 'Autocierre no permitido'));
+SELECT pg_temp.check40('Intento de autocierre no modifica la investigacion',
+  (SELECT count(*)=1 FROM investigaciones WHERE jugador_id=pg_temp.id40('jg') AND cerrada_en IS NULL));
+-- Un segundo administrador diferente sí puede cerrarla.
+SELECT pg_temp.actor40('t40_admin2');
+SELECT fn_cerrar_investigacion((SELECT id FROM investigaciones WHERE jugador_id=pg_temp.id40('jg') AND cerrada_en IS NULL), 'Caso revisado por otro administrador');
+SELECT pg_temp.actor40('t40_admin');
 SELECT fn_puede_apostar(pg_temp.id40('jg'));
 SELECT pg_temp.check40('Tras cierre, jugador sin otros bloqueos esta activo',
   (SELECT estado='Activo' FROM v_estado_jugador WHERE jugador_id=pg_temp.id40('jg')));
+-- La segunda tentativa corresponde al administrador distinto; el titular
+-- seguira bloqueado por CA310 aun si la investigacion ya esta cerrada.
+SELECT pg_temp.actor40('t40_admin2');
 SELECT pg_temp.error40('No se cierra dos veces una investigacion (CA307)','CA307',
   format('SELECT casino.fn_cerrar_investigacion(%s,%L)',
     (SELECT id FROM investigaciones WHERE jugador_id=pg_temp.id40('jg') ORDER BY id DESC LIMIT 1), 'Segundo cierre'));
+SELECT pg_temp.actor40('t40_admin');
 
 -- Baja: sincronizacion de usuario y prioridad Inactivo.
 SELECT fn_desactivar_jugador(pg_temp.id40('j1'));

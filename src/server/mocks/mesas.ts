@@ -97,11 +97,14 @@ export async function crearTurno(_ctx: CtxMock, jornadaId: number, datos: { inic
 }
 
 export async function eliminarTurno(_ctx: CtxMock, id: number, _s: CamposSeguros): Promise<null> {
-  const asigs = mockAsignaciones.filter((a) => a.turnoId === id).map((a) => a.id);
-  if (mockRondas.some((r) => asigs.includes(r.asignacionId))) throw new ErrorCasino('CA110', 'No se puede eliminar: el turno tiene rondas');
-  for (let i = mockAsignaciones.length - 1; i >= 0; i--) if (mockAsignaciones[i].turnoId === id) mockAsignaciones.splice(i, 1);
   const i = mockTurnos.findIndex((t) => t.id === id);
-  if (i >= 0) mockTurnos.splice(i, 1);
+  if (i < 0) throw new ErrorCasino('CA105', 'Turno no encontrado');
+  const asigs = mockAsignaciones.filter((a) => a.turnoId === id);
+  if (asigs.some((a) => a.concepto !== null) || mockRondas.some((r) => asigs.some((a) => a.id === r.asignacionId))) {
+    throw new ErrorCasino('CA126', 'No se puede eliminar un turno con rondas o conceptos emitidos');
+  }
+  for (let j = mockAsignaciones.length - 1; j >= 0; j--) if (mockAsignaciones[j].turnoId === id) mockAsignaciones.splice(j, 1);
+  mockTurnos.splice(i, 1);
   return null;
 }
 
@@ -140,9 +143,12 @@ export async function crearAsignacion(_ctx: CtxMock, datos: { turnoId: number; m
 
 
 export async function eliminarAsignacion(_ctx: CtxMock, id: number, _s: CamposSeguros): Promise<null> {
-  if (mockRondas.some((r) => r.asignacionId === id)) throw new ErrorCasino('CA110', 'No se puede eliminar: la asignación tiene rondas');
   const i = mockAsignaciones.findIndex((a) => a.id === id);
-  if (i >= 0) mockAsignaciones.splice(i, 1);
+  if (i < 0) throw new ErrorCasino('CA106', 'Asignación no encontrada');
+  if (mockAsignaciones[i].concepto !== null || mockRondas.some((r) => r.asignacionId === id)) {
+    throw new ErrorCasino('CA126', 'No se puede eliminar una asignación con rondas o concepto emitido');
+  }
+  mockAsignaciones.splice(i, 1);
   return null;
 }
 

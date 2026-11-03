@@ -331,14 +331,28 @@ $$;
 
 CREATE OR REPLACE FUNCTION fn_eliminar_turno(p_id bigint) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = casino, pg_temp AS $$
+DECLARE v_restriccion text;
 BEGIN
   PERFORM fn_exigir_rol('administrador');
-  IF EXISTS (SELECT 1 FROM rondas r JOIN asignaciones a ON a.id = r.asignacion_id WHERE a.turno_id = p_id) THEN
-    RAISE EXCEPTION 'No se puede eliminar un turno con rondas' USING ERRCODE = 'CA126';
-  END IF;
-  DELETE FROM asignaciones WHERE turno_id = p_id;
-  DELETE FROM turnos WHERE id = p_id;
+  -- Bloquear el turno y sus asignaciones evita perder un concepto o una ronda
+  -- que otra transaccion este creando de forma simultanea.
+  PERFORM 1 FROM turnos WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Turno no encontrado' USING ERRCODE = 'CA105'; END IF;
+  PERFORM 1 FROM asignaciones WHERE turno_id = p_id ORDER BY id FOR UPDATE;
+  IF EXISTS (SELECT 1 FROM rondas r JOIN asignaciones a ON a.id = r.asignacion_id WHERE a.turno_id = p_id)
+     OR EXISTS (SELECT 1 FROM conceptos c JOIN asignaciones a ON a.id = c.asignacion_id WHERE a.turno_id = p_id) THEN
+    RAISE EXCEPTION 'No se puede eliminar un turno con rondas o conceptos emitidos' USING ERRCODE = 'CA126';
+  END IF;
+  BEGIN
+    DELETE FROM asignaciones WHERE turno_id = p_id;
+    DELETE FROM turnos WHERE id = p_id;
+  EXCEPTION WHEN foreign_key_violation THEN
+    GET STACKED DIAGNOSTICS v_restriccion = CONSTRAINT_NAME;
+    IF v_restriccion IN ('conceptos_asignacion_id_fkey', 'rondas_asignacion_id_fkey') THEN
+      RAISE EXCEPTION 'No se puede eliminar un turno con rondas o conceptos emitidos' USING ERRCODE = 'CA126';
+    END IF;
+    RAISE;
+  END;
 END
 $$;
 
@@ -368,13 +382,24 @@ $$;
 
 CREATE OR REPLACE FUNCTION fn_eliminar_asignacion(p_id bigint) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = casino, pg_temp AS $$
+DECLARE v_restriccion text;
 BEGIN
   PERFORM fn_exigir_rol('administrador');
-  IF EXISTS (SELECT 1 FROM rondas WHERE asignacion_id = p_id) THEN
-    RAISE EXCEPTION 'No se puede eliminar una asignación con rondas' USING ERRCODE = 'CA126';
-  END IF;
-  DELETE FROM asignaciones WHERE id = p_id;
+  PERFORM 1 FROM asignaciones WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Asignación no encontrada' USING ERRCODE = 'CA106'; END IF;
+  IF EXISTS (SELECT 1 FROM rondas WHERE asignacion_id = p_id)
+     OR EXISTS (SELECT 1 FROM conceptos WHERE asignacion_id = p_id) THEN
+    RAISE EXCEPTION 'No se puede eliminar una asignación con rondas o concepto emitido' USING ERRCODE = 'CA126';
+  END IF;
+  BEGIN
+    DELETE FROM asignaciones WHERE id = p_id;
+  EXCEPTION WHEN foreign_key_violation THEN
+    GET STACKED DIAGNOSTICS v_restriccion = CONSTRAINT_NAME;
+    IF v_restriccion IN ('conceptos_asignacion_id_fkey', 'rondas_asignacion_id_fkey') THEN
+      RAISE EXCEPTION 'No se puede eliminar una asignación con rondas o concepto emitido' USING ERRCODE = 'CA126';
+    END IF;
+    RAISE;
+  END;
 END
 $$;
 

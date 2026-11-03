@@ -90,7 +90,22 @@ export const actualizarUmbral = crearAccion(
 // Opcionales: falta la implementación SQL y el acuerdo de habilitarlos.
 const noDisponible = async (): Promise<never> => { throw new ErrorCasino('CA399', 'No disponible'); };
 export const registrarConsignacion = crearAccion(
-  { roles: ['administrador'], seguro: true, args: z.tuple([zId, zDinero, zSeguro]), mock: mock.registrarConsignacion }, noDisponible,
+  { roles: ['administrador'], seguro: true, args: z.tuple([zId, zDinero, zSeguro]), mock: mock.registrarConsignacion },
+  async ({ q }, jugadorId, monto): Promise<Movimiento> => {
+    const [r] = await q<{ id: number }>(
+      'SELECT casino.fn_registrar_consignacion($1,$2) AS id',
+      [jugadorId, monto],
+    );
+    if (!r) throw new Error('La consignacion no devolvio identificador de movimiento');
+    const [movimiento] = await q(
+      `SELECT id, tipo, monto, saldo_resultante, fecha, apuesta_id
+       FROM casino.v_historial_movimientos
+       WHERE id = $1 AND jugador_id = $2`,
+      [r.id, jugadorId],
+    );
+    if (!movimiento) throw new Error('La consignacion no genero un movimiento consultable');
+    return camel<Movimiento>(movimiento);
+  },
 );
 export const registrarRetiro = crearAccion(
   { roles: ['administrador'], seguro: true, args: z.tuple([zId, zDinero, zSeguro]), mock: mock.registrarRetiro }, noDisponible,

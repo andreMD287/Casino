@@ -244,6 +244,52 @@ BEGIN
   UPDATE usuarios SET activo = false WHERE id = v_usuario_id;
 END $$;
 
+-- [CONSIGNACION_ADMIN_INICIO]
+-- Consignacion administrativa (A7): creditos iniciales y posteriores.
+-- Solo el administrador; no habilita retiros ni modifica reglas de apuestas.
+-- La ficha debe estar habilitada (jugador y usuario activos). Una suspension
+-- o investigacion no bloquea abonos: su restriccion aplica a apostar/retirar.
+CREATE OR REPLACE FUNCTION fn_registrar_consignacion(p_jugador_id bigint, p_monto numeric)
+RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = casino, pg_temp AS $$
+DECLARE
+  v_saldo numeric(14,2);
+  v_movimiento_id bigint;
+BEGIN
+  PERFORM fn_exigir_rol('administrador');
+
+  -- No redondear silenciosamente dinero recibido por SQL directo.
+  IF p_monto IS NULL OR p_monto <= 0
+     OR p_monto > 999999999999.99 OR p_monto <> trunc(p_monto, 2) THEN
+    RAISE EXCEPTION 'La consignacion debe ser positiva, tener maximo dos decimales y caber en el saldo'
+      USING ERRCODE = 'CA309';
+  END IF;
+
+  -- El bloqueo protege la comprobacion de estado y el saldo en concurrencia.
+  SELECT j.saldo INTO v_saldo
+  FROM jugadores j JOIN usuarios u ON u.id = j.usuario_id
+  WHERE j.id = p_jugador_id AND j.activo AND u.activo
+  FOR UPDATE OF j;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'El jugador no existe o su cuenta esta inactiva'
+      USING ERRCODE = 'CA301';
+  END IF;
+  IF v_saldo + p_monto > 999999999999.99 THEN
+    RAISE EXCEPTION 'La consignacion excede la capacidad del saldo del jugador'
+      USING ERRCODE = 'CA309';
+  END IF;
+
+  -- Punto de entrada contable unico: actualiza saldo, registra monto,
+  -- saldo_resultante y creado_por = app.usuario_id en movimientos_saldo.
+  PERFORM fn_mover_saldo(p_jugador_id, 'consignacion', p_monto);
+
+  -- currval es POR SESION y se refiere a esta secuencia en particular;
+  -- no depende de un ORDER BY id inseguro ante operaciones concurrentes.
+  v_movimiento_id := currval(pg_get_serial_sequence('casino.movimientos_saldo', 'id'));
+  RETURN v_movimiento_id;
+END $$;
+-- [CONSIGNACION_ADMIN_FIN]
+
 -- Estado derivado: Inactivo > Investigacion > Suspendido > Activo.
 CREATE OR REPLACE VIEW v_estado_jugador AS
 SELECT j.id AS jugador_id,

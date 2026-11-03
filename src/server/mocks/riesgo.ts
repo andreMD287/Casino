@@ -103,9 +103,6 @@ export async function registrarConsignacion(_ctx: CtxMock, jugadorId: number, mo
   return m;
 }
 
-export async function registrarRetiro(_ctx: CtxMock, jugadorId: number, monto: Dinero, _s: CamposSeguros): Promise<Movimiento> {
-  if (buscar(jugadorId).estado === 'Investigación') throw new ErrorCasino('CA303', 'El jugador está en investigación');
-  moverSaldoMock(jugadorId, 'retiro', Number(monto).toFixed(2));
-  const { jugadorId: _j, ...m } = mockMovimientos[mockMovimientos.length - 1];
-  return m;
+export async function registrarRetiro(_ctx: CtxMock, _jugadorId: number, _monto: Dinero, _s: CamposSeguros): Promise<Movimiento> {
+  throw new ErrorCasino('CA399', 'No disponible');
 }

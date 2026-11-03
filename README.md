@@ -1,52 +1,223 @@
-# Casino — Bases de Datos (Javeriana)
+# Casino — Bases de Datos, Administración y Aplicaciones
 
-Aplicación web para la gestión de un casino. Next.js 16 (App Router, Server Actions) + PostgreSQL (16 o superior), sin ORM.
-El contrato común del equipo está en [`docs/CONTRATO.md`](docs/CONTRATO.md).
+Proyecto de la Pontificia Universidad Javeriana para gestionar la operación de un casino: usuarios y roles, empleados, mesas, jornadas, turnos, rondas, apuestas, movimientos en fichas, suspensiones e investigaciones.
 
-> README mínimo de la fase 0 (André). Andrés lo completa con la instalación detallada.
+**Tecnologías:** Next.js 16.4.3 con App Router y Server Actions, React 19, TypeScript, PostgreSQL 16, SQL/PLpgSQL, `pg` y Tailwind CSS. El acceso a datos no usa ORM. Las tablas, restricciones y funciones viven en el esquema `casino`.
 
-## Requisitos
+**Integrantes:** André Landinez (infraestructura, autenticación, rondas y apuestas), Andrés Barrios (personal, mesas, turnos, riesgo e historial) y Valentina Carreño / Hania (interfaz web por rol).
 
-- Node.js 20+ y npm
-- PostgreSQL 16+ con acceso de superusuario (solo para crear la base)
-- Bash (en Windows, Git Bash) para `db/run_all.sh`
+El contrato común está en [`docs/CONTRATO.md`](docs/CONTRATO.md). El modelo de datos y la explicación de las funcionalidades se encuentran en [`docs/documento/`](docs/documento/).
 
-## Arranque
+## 1. Requisitos
 
-```bash
-npm install
-cp .env.example .env.local      # completar PGPASSWORD, CASINO_APP_PASSWORD (igual en DATABASE_URL) y SECRETO_SERVIDOR
-./db/run_all.sh                 # recrea la base "casino" desde cero (DROP + CREATE)
-./db/run_all.sh --tests         # igual, y además corre db/tests/*.sql (OK / FALLO / PENDIENTE)
-npm run dev                     # http://localhost:3000
+- Node.js 20.9 o superior y npm.
+- Docker Desktop con soporte de contenedores Linux **o** PostgreSQL 16 instalado localmente.
+- PowerShell en Windows para el procedimiento con Docker; alternativamente `bash` y `psql` para la instalación directa.
+- Puertos disponibles: `3000` para Next.js y `55433` para PostgreSQL en los ejemplos con Docker.
+
+Las instrucciones de Docker se refieren a un **entorno local de demostración**. No se deben reutilizar contraseñas, puertos o configuraciones de este ejemplo en un servidor de producción.
+
+## 2. Descargar las dependencias
+
+```powershell
+# En la carpeta raíz del repositorio
+npm ci
+npm run lint
+npm run build
 ```
 
-Si `psql` no está en el PATH, `run_all.sh` lo busca en `C:\Program Files\PostgreSQL\*\bin` o se le puede indicar con `PSQL=/ruta/a/psql`.
+El comando `npm ci` instala las dependencias según `package-lock.json`. Compilar Next.js verifica TypeScript, pero **no demuestra por sí solo que las funciones SQL y la interfaz sean operativas**.
 
-### Sin base de datos (frontend)
+## 3. PostgreSQL 16 con Docker Desktop (Windows)
 
-Con `MODO_MOCK=1` en `.env.local`, todas las acciones responden con datos de ejemplo en memoria y la sesión
-se simula con el rol de `MOCK_ROL` (`administrador`, `crupier`, `supervisor` o `jugador`).
-El login también funciona en este modo (SRP de verdad contra usuarios en memoria).
+Este procedimiento crea un contenedor aislado llamado `casino-postgres`, en el puerto `55433` del computador; el puerto `5432` permanece dentro del contenedor.
 
-## Usuarios de prueba
+```powershell
+# Primero, confirmar que no existe un contenedor con ese nombre
+# y que el puerto 55433 está disponible.
+docker ps -a --filter "name=casino-postgres"
 
-Clave de todos: `Casino2026*`
+$clavePg = Read-Host "Contraseña local para el usuario postgres"
+docker run -d `
+  --name casino-postgres `
+  --env "POSTGRES_PASSWORD=$clavePg" `
+  --publish 55433:5432 `
+  --mount "type=volume,source=casino-pgdata,target=/var/lib/postgresql/data" `
+  postgres:16
 
-| Usuario | Rol |
-|---|---|
-| `admin` | administrador |
-| `crupier1` … `crupier4` | crupier |
-| `supervisor1`, `supervisor2` | supervisor |
-| `jugador1`, `jugador2`, `jugador3`, `crupier1.juega`, `supervisor1.juega` | jugador |
+docker exec casino-postgres pg_isready -U postgres
+```
 
-Los verificadores SRP se generan con `npm run semilla:usuarios` (escribe `db/90_semilla_base.sql`).
+Si el contenedor ya existe, **no vuelvas a ejecutar `docker run` con el mismo nombre**. Comprueba `docker ps -a` y utiliza `docker start casino-postgres` si aparece detenido.
 
-## Scripts
+### Configuración de `.env.local`
 
-| Comando | Qué hace |
-|---|---|
-| `npm run db` / `npm run db:test` | `db/run_all.sh` sin / con pruebas |
-| `npm run probar:auth` | prueba de punta a punta del login SRP contra la BD |
-| `npm run semilla:usuarios` | regenera los usuarios de prueba con su salt y verificador |
-| `npm run build` | compilación de producción |
+Crear una copia de `.env.example` llamada `.env.local` y configurar valores **locales**:
+
+```dotenv
+DATABASE_URL=postgresql://casino_app:CLAVE_APP@127.0.0.1:55433/casino
+CASINO_APP_PASSWORD=CLAVE_APP
+SECRETO_SERVIDOR=SECRETO_ALEATORIO_DE_32_BYTES_O_MAS
+MODO_MOCK=0
+MOCK_ROL=administrador
+```
+
+`CLAVE_APP` es una contraseña creada para el rol `casino_app`; debe ser igual en `DATABASE_URL` y `CASINO_APP_PASSWORD`. `SECRETO_SERVIDOR` debe generarse de forma aleatoria, por ejemplo con `node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"`. No subas `.env.local` a GitHub ni compartas su contenido.
+
+### Cargar esquema, funciones y semillas
+
+El contenedor trae `psql` y `bash`. Desde la raíz del repositorio, en PowerShell:
+
+```powershell
+docker exec casino-postgres mkdir -p /tmp/casino-db
+docker cp .\db\. casino-postgres:/tmp/casino-db/
+
+# Recuperar la clave de casino_app sin mostrarla en pantalla.
+$claveApp = ((Get-Content '.env.local' |
+  Where-Object { $_ -match '^CASINO_APP_PASSWORD=' } |
+  Select-Object -First 1) -replace '^CASINO_APP_PASSWORD=', '').Trim()
+
+if (-not $claveApp) { throw 'Falta CASINO_APP_PASSWORD en .env.local' }
+
+docker exec `
+  -e "CASINO_APP_PASSWORD=$claveApp" `
+  -e "PGHOST=/var/run/postgresql" `
+  -e "PGPORT=5432" `
+  -e "PGUSER=postgres" `
+  casino-postgres `
+  bash /tmp/casino-db/run_all.sh
+```
+
+**Advertencia importante:** `run_all.sh` ejecuta `DROP DATABASE IF EXISTS casino WITH (FORCE)` y vuelve a crear la base `casino` en el servidor indicado. Úsalo únicamente en el contenedor de prueba preparado para este proyecto; **destruye los datos previos de esa base**. No lo dirijas a bases de otros trabajos ni a un servidor de producción.
+
+Si los archivos se modifican después de `docker cp`, hay que copiarlos otra vez antes de reconstruir.
+
+## 4. Datos de prueba
+
+La ejecución integrada del **2 de noviembre de 2026** produjo:
+
+| Entidad | Filas |
+|---|---:|
+| Empleados | 7 |
+| Mesas | 3 |
+| Jugadores | 5 |
+| Rondas | 10 |
+| Apuestas | 62 |
+
+Las mesas precargadas son `RUL-01` (Ruleta), `BJ-01` (Blackjack) y `POK-01` (Póker). Se programan turnos con horarios relativos a la inicialización y un histórico para escenarios de riesgo. Las credenciales de demostración se encuentran en el contrato compartido y en `docs/documento/datos-prueba.md`.
+
+Puedes comprobar los datos con:
+
+```powershell
+docker exec casino-postgres psql -X -U postgres -d casino `
+  -c "SELECT (SELECT count(*) FROM casino.empleados) AS empleados,
+             (SELECT count(*) FROM casino.mesas) AS mesas,
+             (SELECT count(*) FROM casino.jugadores) AS jugadores,
+             (SELECT count(*) FROM casino.rondas) AS rondas,
+             (SELECT count(*) FROM casino.apuestas) AS apuestas;"
+```
+
+## 5. Ejecutar Next.js
+
+```powershell
+npm run dev
+```
+
+Abrir `http://localhost:3000`. `MODO_MOCK=1` permite desarrollar la interfaz con datos de ejemplo; `MODO_MOCK=0` requiere PostgreSQL, permisos y sesiones reales.
+
+**Estado de integración verificado:** en `andres/backend`, commit `d96261b`, la instalación desde cero de PostgreSQL 16 y `run_all.sh --tests` terminaron con **142 OK, 0 FALLO, 0 PENDIENTE** (121 pruebas existentes y 21 nuevas de consignación), en un contenedor temporal independiente. La prueba SRP, ejecutada anteriormente sobre PostgreSQL real, terminó con **22 OK, 0 FALLO**. `npm run lint` y `npm run build` se completaron correctamente después de incorporar la consignación. La compilación comprobada todavía muestra únicamente `/` y `/_not-found`: **la interfaz funcional de Hania no está acreditada como integrada en esta rama**. Antes de entregar se deben ejecutar flujos reales de los cuatro roles con `MODO_MOCK=0`.
+
+## 6. Pruebas SQL
+
+Para ejecutar todos los archivos de `db/tests/` con una reconstrucción limpia de la base:
+
+```powershell
+# Copiar los cambios recientes antes de ejecutar pruebas.
+docker cp .\db\. casino-postgres:/tmp/casino-db/
+
+docker exec `
+  -e "CASINO_APP_PASSWORD=$claveApp" `
+  -e "PGHOST=/var/run/postgresql" `
+  -e "PGPORT=5432" `
+  -e "PGUSER=postgres" `
+  casino-postgres `
+  bash /tmp/casino-db/run_all.sh --tests
+```
+
+**Última verificación integral (2 de noviembre de 2026):** la versión publicada en `andres/backend`, commit `d96261b`, se instaló desde cero en un contenedor PostgreSQL 16 **temporal y separado** de `casino-postgres`. Se ejecutó `run_all.sh --tests` con módulos 00–50, semillas 90–93 y todos los tests de `db/tests/`, incluido `45_consignacion.sql`: **142 OK, 0 FALLO, 0 PENDIENTE; código de salida 0**. Los 21 casos de consignación comprobaron saldos, movimientos, actor responsable, montos inválidos, usuario o ficha inactivos y rechazos por rol. Las pruebas locales de consignación terminaron con `ROLLBACK`; la batería aislada reconstruyó exclusivamente su propia base y el contenedor temporal se eliminó al terminar. La base `casino-postgres` original no se reconstruyó durante esta última comprobación. Las **22 pruebas SRP** y su código de salida 0 pertenecen a una ejecución independiente anterior. `npm run lint` y `npm run build` volvieron a pasar con la acción nueva. Historial: 39 OK y dos archivos fallidos (documentos de prueba corregidos), 109 OK (primer merge), 114 OK (reporte de André), 121 OK (riesgo y ruleta) y **142 OK (consignación)**. Véase [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md).
+
+**Permisos y acceso comprobados:** previamente se verificó `EXECUTE` para las **20 funciones públicas** de los módulos existentes de Andrés; la función adicional `fn_registrar_consignacion` fue probada ahora como `casino_app`, con autorización administrativa y rechazos de los demás roles. También se verificó el bloqueo de escritura directa en `jugadores`, la inaccesibilidad de `fn_mover_saldo` y el rechazo `CA002` al intentar una operación administrativa como jugador. Se consultaron **14 vistas** usando `casino_app`, se validaron nombres de columnas de **20 vistas** y se ejecutaron **9 consultas reales mediante Node.js/`pg`**. La consignación devuelve un `Movimiento` consultado por su identificador exacto. `registrarRetiro` **sigue fuera del alcance** y devuelve `CA399`; el aviso de que `fn_registrar_retiro` no existe es esperado. Estas pruebas no sustituyen la ejecución de Server Actions por HTTP con sesiones y formularios reales.
+
+
+**Pruebas de autenticación con Docker:** en el entorno Windows usado para la evidencia, `npm run probar:auth` necesitó `PGHOST=127.0.0.1`, `PGPORT=55433`, `PGUSER=postgres` y `PGPASSWORD` con la contraseña local del contenedor, además de `.env.local`. Sin las variables de conexión, el script podía intentar `localhost:5432` y devolver `ECONNREFUSED`. No documentar ni publicar contraseñas reales.
+
+### Comprobar permisos sin modificar la BD
+
+La siguiente consulta es una verificación rápida de ocho funciones; la revisión completa de veinte funciones se documenta en el estado de integración.
+
+```powershell
+docker exec casino-postgres psql -X -U postgres -d casino `
+  -c "SELECT p.proname, has_function_privilege('casino_app', p.oid, 'EXECUTE') AS ejecutable
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'casino' AND p.proname IN
+       ('fn_crear_empleado','fn_crear_mesa','fn_crear_turno','fn_crear_asignacion',
+        'fn_solicitar_pausa','fn_registrar_abono','fn_cerrar_investigacion','fn_actualizar_umbral')
+      ORDER BY p.proname;"
+```
+
+## 7. Preparación de la demostración
+
+El turno vigente de las semillas dura un tiempo limitado. Antes de una demo se puede ejecutar:
+
+```powershell
+docker cp .\db\demo\turno_actual.sql casino-postgres:/tmp/turno_actual.sql
+docker exec casino-postgres psql -X -U postgres -d casino `
+  -v ON_ERROR_STOP=1 -f /tmp/turno_actual.sql
+```
+
+El script respeta competencias y rotación. Si no encuentra una combinación permitida de personal para las tres mesas, mostrará un error; en una base exclusiva de demostración se puede reconstruir con `run_all.sh`. No se deben desactivar controles para hacer funcionar la demo.
+
+## 8. Estructura del repositorio
+
+```text
+src/app/                 Páginas y layouts de Next.js (frontend)
+src/components/          Componentes de interfaz (al integrarse)
+src/lib/                 Contratos TypeScript y cliente SRP
+src/server/acciones/     Acciones de servidor por dominio
+src/server/auth/         Sesiones y autorización
+db/02_esquema.sql         Tablas, restricciones e índices
+db/10_auth.sql           Autenticación
+db/20_personal_mesas.sql Personal, mesas, jornadas y turnos
+db/30_rondas_apuestas.sql Rondas y apuestas
+db/40_riesgo_historial.sql Jugadores, suspensiones e historial
+db/50_permisos_auditoria.sql Privilegios y auditoría
+db/90_*.sql a 93_*.sql  Semillas de demostración
+db/tests/               Pruebas SQL
+db/demo/                Preparación del turno actual
+docs/documento/          Documentación técnica por integrante
+```
+
+## 9. Problemas frecuentes
+
+- **`psql` no se reconoce en PowerShell:** usar `docker exec casino-postgres psql ...` o instalar el cliente de PostgreSQL en Windows.
+- **Docker Engine no inicia:** comprobar Docker Desktop y WSL 2; no borrar volúmenes ni restaurar a fábrica sin revisar los datos de otros proyectos.
+- **Puerto `55433` ocupado:** comprobar `docker ps` y elegir otro puerto, actualizando también `DATABASE_URL`.
+- **La aplicación devuelve `CA000` o `permission denied`:** revisar permisos y los registros del servidor; confirmar que `casino_app` tiene `EXECUTE` en las funciones públicas y `SELECT` en las vistas.
+- **`CA007` al escribir:** recargar el formulario para renovar la firma y la fecha.
+- **No aparece turno vigente:** preparar `db/demo/turno_actual.sql` o reconstruir la base de demo respetando rotación.
+- **Los tests integrales fallan después del merge:** comprobar que `origin/main` haya sido integrado y que se copiara al contenedor el `db/` actualizado; no eliminar validaciones para que pasen las pruebas.
+- **`npm run build` muestra solo `/`:** todavía no está incorporada la interfaz funcional en la rama que se está compilando.
+
+## 10. Documentos y sustentación
+
+- [`docs/documento/framework.md`](docs/documento/framework.md): framework.
+- [`docs/documento/arquitectura.md`](docs/documento/arquitectura.md): arquitectura.
+- [`docs/documento/autenticacion.md`](docs/documento/autenticacion.md): SRP-6a y seguridad.
+- [`docs/documento/modelo-datos.md`](docs/documento/modelo-datos.md): entidades, relaciones, restricciones y vistas.
+- [`docs/documento/funcionalidades-andres.md`](docs/documento/funcionalidades-andres.md): funcionalidades de Andrés.
+- [`docs/documento/dificultades-andres.md`](docs/documento/dificultades-andres.md): dificultades y decisiones.
+- [`docs/documento/datos-prueba.md`](docs/documento/datos-prueba.md): escenarios de demostración.
+- [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md): resultados cronológicos, pruebas de seguridad y validaciones pendientes.
+- [`docs/documento/guia-integracion-frontend.md`](docs/documento/guia-integracion-frontend.md): acciones, roles, campos seguros y recomendaciones de integración para el frontend.
+
+La exposición debe cubrir la arquitectura, el flujo de una apuesta, la autenticación de conocimiento cero, las funciones y restricciones SQL, el control por roles y un análisis crítico de Next.js y PostgreSQL, con evidencias del sistema realmente funcionando.

@@ -95,7 +95,10 @@ BEGIN
     INSERT INTO competencias(empleado_id,juego_id) VALUES(v_emp,v_juego);
   END LOOP;
 
-  INSERT INTO jornadas(fecha) VALUES (v_fecha) RETURNING id INTO v_jornada;
+  SELECT id INTO v_jornada FROM jornadas WHERE fecha = v_fecha;
+  IF v_jornada IS NULL THEN
+    INSERT INTO jornadas(fecha) VALUES (v_fecha) RETURNING id INTO v_jornada;
+  END IF;
   INSERT INTO turnos(jornada_id,numero,inicio,fin)
     VALUES(v_jornada,NULL,(v_fecha + time '12:00') AT TIME ZONE 'America/Bogota',
                           (v_fecha + time '13:00') AT TIME ZONE 'America/Bogota')

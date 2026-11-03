@@ -1,0 +1,1 @@
+export default function Cargando(){return <div role="status" aria-live="polite" style={{maxWidth:700,margin:'12vh auto',padding:30}}><h1>Cargando información…</h1><div className="panel" style={{height:90,background:'#f0e7e4',opacity:.7}}/><div className="panel" style={{height:210,marginTop:18,background:'#f0e7e4',opacity:.7}}/></div>}

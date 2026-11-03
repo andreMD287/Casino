@@ -125,7 +125,7 @@ npm run dev
 
 Abrir `http://localhost:3000`. `MODO_MOCK=1` permite desarrollar la interfaz con datos de ejemplo; `MODO_MOCK=0` requiere PostgreSQL, permisos y sesiones reales.
 
-**Estado de integración:** `andres/backend`, tras el merge de `origin/main`, compiló y pasó la batería SQL de 109 comprobaciones. El build todavía enumera únicamente `/` y `/_not-found`, por lo que **no hay evidencia de que la interfaz de Hania esté integrada en esta rama**. Antes de la demostración se deben probar los cuatro roles con `MODO_MOCK=0`.
+**Estado de integración verificado:** en `andres/backend`, después de incorporar la validación de ruleta y los ajustes aprobados de riesgo, `run_all.sh --tests` terminó con **121 OK, 0 FALLO, 0 PENDIENTE**; `npm run probar:auth` terminó con **22 OK, 0 FALLO**; y `npm run lint` y `npm run build` se completaron correctamente. La compilación comprobada todavía muestra únicamente `/` y `/_not-found`: **la interfaz funcional de Hania no está acreditada como integrada en esta rama**. Antes de entregar se deben ejecutar flujos reales de los cuatro roles con `MODO_MOCK=0`.
 
 ## 6. Pruebas SQL
 
@@ -144,11 +144,15 @@ docker exec `
   bash /tmp/casino-db/run_all.sh --tests
 ```
 
-**Verificación integral del 2 de noviembre de 2026:** después de incorporar `origin/main` en `andres/backend` (merge local `dbe045f`), se ejecutó `run_all.sh --tests` en `casino-postgres` y se obtuvo **109 OK, 0 FALLO, 0 PENDIENTE, código de salida 0**. Anteriormente se habían producido 39 OK y dos fallos por documentos alfanuméricos de pruebas, corregidos por André en `main`. André también reportó **22/22** en su prueba de login, resultado que todavía no se ha reproducido de manera independiente en este entorno. Véase [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md).
+**Última verificación integral (2 de noviembre de 2026):** tras incorporar la validación de ruleta de André (`214196f`) y las correcciones de riesgo y semillas publicadas por Andrés (`f0fd284`), se ejecutó `run_all.sh --tests` en el contenedor `casino-postgres`: **121 OK, 0 FALLO, 0 PENDIENTE; código de salida 0**. La autenticación SRP se repitió localmente con `npm run probar:auth`: **22 OK, 0 FALLO; código 0**. También pasaron `npm run lint` y `npm run build`. El historial fue: 39 OK y 2 archivos fallidos por documentos de prueba alfanuméricos (corregidos por André); 109 OK tras el primer merge; 114 OK reportados por André después de la ruleta; y 121 OK observados localmente después de ajustar las reglas de riesgo y la semilla histórica. Los resultados de etapas anteriores no deben presentarse como el estado actual. Véase [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md).
 
-André incorporó en `main` concesiones `EXECUTE` para las funciones públicas del módulo. Después de la reconstrucción, **las ocho funciones consultadas** mediante `has_function_privilege` devolvieron `t`; el conjunto completo de 20 funciones debe revisarse si se requiere una verificación exhaustiva. Las funciones opcionales de consignación y retiro aún no existen y generan avisos informativos durante la instalación. Un build exitoso no sustituye las pruebas de autorización.
+**Permisos y acceso comprobados:** las **20 funciones públicas** de los módulos de Andrés existen y devolvieron permiso `EXECUTE` para `casino_app`; también se verificó el bloqueo de escritura directa en `jugadores`, la inaccesibilidad de `fn_mover_saldo` y el rechazo `CA002` cuando un jugador intenta ejecutar una función administrativa. Se consultaron **14 vistas** usando `casino_app`, se verificaron los nombres de columnas esperados en **20 vistas**, se ejecutaron **9 consultas reales mediante Node.js/`pg`**, y se comprobaron los conceptos y la separación de asignaciones entre supervisores. Estos controles no sustituyen todavía pruebas de Server Actions invocadas por HTTP con sesiones y formularios reales. Las funciones opcionales `fn_registrar_consignacion` y `fn_registrar_retiro` siguen sin implementación y generan avisos informativos al configurar los privilegios.
+
+**Pruebas de autenticación con Docker:** en el entorno Windows usado para la evidencia, `npm run probar:auth` necesitó `PGHOST=127.0.0.1`, `PGPORT=55433`, `PGUSER=postgres` y `PGPASSWORD` con la contraseña local del contenedor, además de `.env.local`. Sin las variables de conexión, el script podía intentar `localhost:5432` y devolver `ECONNREFUSED`. No documentar ni publicar contraseñas reales.
 
 ### Comprobar permisos sin modificar la BD
+
+La siguiente consulta es una verificación rápida de ocho funciones; la revisión completa de veinte funciones se documenta en el estado de integración.
 
 ```powershell
 docker exec casino-postgres psql -X -U postgres -d casino `
@@ -212,6 +216,7 @@ docs/documento/          Documentación técnica por integrante
 - [`docs/documento/funcionalidades-andres.md`](docs/documento/funcionalidades-andres.md): funcionalidades de Andrés.
 - [`docs/documento/dificultades-andres.md`](docs/documento/dificultades-andres.md): dificultades y decisiones.
 - [`docs/documento/datos-prueba.md`](docs/documento/datos-prueba.md): escenarios de demostración.
-- [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md): resultados y dependencias abiertas.
+- [`docs/pruebas/estado-integracion.md`](docs/pruebas/estado-integracion.md): resultados cronológicos, pruebas de seguridad y validaciones pendientes.
+- [`docs/documento/guia-integracion-frontend.md`](docs/documento/guia-integracion-frontend.md): acciones, roles, campos seguros y recomendaciones de integración para el frontend.
 
 La exposición debe cubrir la arquitectura, el flujo de una apuesta, la autenticación de conocimiento cero, las funciones y restricciones SQL, el control por roles y un análisis crítico de Next.js y PostgreSQL, con evidencias del sistema realmente funcionando.
